@@ -1,0 +1,186 @@
+.workspace {
+  display: grid;
+  width: 100%;
+  height: 100dvh;
+  min-height: 620px;
+  grid-template-columns: 228px minmax(440px, 1fr) 340px;
+  overflow: hidden;
+  background: var(--lexora-bg);
+}
+
+.navigation {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: var(--space-5) var(--space-4);
+  border-right: 1px solid var(--lexora-border);
+  background: var(--lexora-surface);
+}
+
+.brandBlock {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-2) var(--space-6);
+}
+
+.brandMark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--lexora-primary);
+  color: #ffffff;
+}
+
+.brandBlock h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.brandBlock span {
+  display: block;
+  margin-top: 3px;
+  color: var(--lexora-text-muted);
+  font-size: 11px;
+}
+
+.newButton {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--lexora-primary);
+  border-radius: var(--radius-md);
+  background: var(--lexora-primary);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.newButton:hover {
+  background: var(--lexora-primary-hover);
+}
+
+.caseList {
+  margin-top: var(--space-6);
+}
+
+.sectionLabel {
+  display: block;
+  padding: 0 var(--space-2) var(--space-2);
+  color: var(--lexora-text-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.caseButton {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--lexora-border);
+  border-radius: var(--radius-md);
+  background: var(--lexora-raised);
+  color: var(--lexora-text);
+  text-align: left;
+}
+
+.caseButton + .caseButton {
+  margin-top: var(--space-2);
+}
+
+.caseButton svg {
+  flex: 0 0 auto;
+  color: var(--lexora-ai);
+}
+
+.caseButton span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.caseButton small {
+  margin-left: auto;
+  color: var(--lexora-text-muted);
+  font-size: 11px;
+}
+
+.activeCase {
+  border-color: color-mix(in srgb, var(--lexora-primary), transparent 55%);
+  background: var(--lexora-primary-soft);
+}
+
+.navigationFooter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding: var(--space-3) var(--space-2) 0;
+  color: var(--lexora-text-muted);
+  font-size: 11px;
+}
+
+.ready,
+.connected {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.ready {
+  background: var(--lexora-text-muted);
+}
+
+.connected {
+  background: var(--lexora-primary);
+}
+
+@media (max-width: 1120px) {
+  .workspace {
+    grid-template-columns: 190px minmax(420px, 1fr) 310px;
+  }
+
+  .navigation {
+    padding-right: var(--space-3);
+    padding-left: var(--space-3);
+  }
+
+  .brandBlock {
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .brandBlock h1 {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: 184px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace {
+    min-height: 500px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .navigation {
+    display: none;
+  }
+}

@@ -1,0 +1,7 @@
+{"id":"intermediary-bypass","query":"卖家在多家中介挂牌，我通过报价更低的另一家中介成交，是否构成跳单违约？","expected_case_number":"指导案例1号","expected_evidence":"不构成违约"}
+{"id":"execution-settlement","query":"二审期间达成执行和解后撤回上诉，对方不履行和解协议，能否申请执行一审判决？","expected_case_number":"指导案例2号","expected_evidence":"申请执行一审判决"}
+{"id":"car-sales-fraud","query":"4S店把交付前维修过的汽车当作无维修记录的新车出售，是否构成消费欺诈？","expected_case_number":"指导案例17号","expected_evidence":"构成销售欺诈"}
+{"id":"unsafe-food-compensation","query":"消费者明知食品不符合安全标准仍购买，能否要求十倍赔偿？","expected_case_number":"指导案例23号","expected_evidence":"明知食品不符合安全标准"}
+{"id":"telecom-expiry-notice","query":"运营商给充值余额设置有效期但没有向消费者告知，是否构成违约？","expected_case_number":"指导案例64号","expected_evidence":"未向消费者告知"}
+{"id":"cooperation-employment","query":"公司与个人签合作经营协议但实际进行考勤管理并按月发工资，能否确认劳动关系？","expected_case_number":"指导案例179号","expected_evidence":"双方签订的合作协议"}
+{"id":"platform-driver-employment","query":"代驾平台只进行必要运营管理，司机自主决定是否接单，是否存在劳动关系？","expected_case_number":"指导性案例240号","expected_evidence":"不属于支配性劳动管理"}

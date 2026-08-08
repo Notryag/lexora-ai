@@ -1,0 +1,17 @@
+{"id":"labor-contract-unwritten","query":"公司入职两个月一直不签书面劳动合同，我能主张什么？","expected_title":"中华人民共和国劳动合同法","expected_article":"第八十二条","expected_evidence":"每月支付二倍的工资"}
+{"id":"labor-contract-unpaid-termination","query":"公司没有及时足额发工资，员工可以解除劳动合同吗？","expected_title":"中华人民共和国劳动合同法","expected_article":"第三十八条","expected_evidence":"未及时足额支付劳动报酬"}
+{"id":"labor-contract-overdue-wage-termination","query":"公司拖欠工资后我解除劳动合同，能要求经济补偿吗？","expected_title":"中华人民共和国劳动合同法","expected_article":"第三十八条","expected_evidence":"未及时足额支付劳动报酬"}
+{"id":"labor-contract-compensation-calculation","query":"解除劳动合同的经济补偿如何按工作年限计算？","expected_title":"中华人民共和国劳动合同法","expected_article":"第四十七条","expected_evidence":"每满一年支付一个月工资"}
+{"id":"labor-contract-probation","query":"三年以上劳动合同最多能约定几个月试用期？","expected_title":"中华人民共和国劳动合同法","expected_article":"第十九条","expected_evidence":"试用期不得超过六个月"}
+{"id":"labor-contract-compensation-scope","query":"劳动者依据劳动合同法第三十八条解除合同，公司是否要支付经济补偿？","expected_title":"中华人民共和国劳动合同法","expected_article":"第四十六条","expected_evidence":"劳动者依照本法第三十八条规定解除劳动合同"}
+{"id":"labor-hours","query":"劳动法规定每天和每周的标准工作时间上限是多少？","expected_title":"中华人民共和国劳动法","expected_article":"第三十六条","expected_evidence":"每日工作时间不超过八小时"}
+{"id":"labor-holiday-overtime","query":"法定节假日安排加班应当支付多少倍工资？","expected_title":"中华人民共和国劳动法","expected_article":"第四十四条","expected_evidence":"百分之三百"}
+{"id":"labor-wage-payment","query":"工资是否必须按月用货币支付，单位能无故拖欠吗？","expected_title":"中华人民共和国劳动法","expected_article":"第五十条","expected_evidence":"不得克扣或者无故拖欠"}
+{"id":"arbitration-limitation","query":"劳动争议申请仲裁的时效是多长？","expected_title":"中华人民共和国劳动争议调解仲裁法","expected_article":"第二十七条","expected_evidence":"时效期间为一年"}
+{"id":"arbitration-jurisdiction","query":"劳动合同履行地和单位所在地都申请仲裁时由哪里管辖？","expected_title":"中华人民共和国劳动争议调解仲裁法","expected_article":"第二十一条","expected_evidence":"由劳动合同履行地的劳动争议仲裁委员会管辖"}
+{"id":"arbitration-final-award","query":"追索劳动报酬不超过当地最低工资十二个月金额，仲裁裁决是否终局？","expected_title":"中华人民共和国劳动争议调解仲裁法","expected_article":"第四十七条","expected_evidence":"仲裁裁决为终局裁决"}
+{"id":"social-work-injury-payment","query":"职工的工伤保险费由单位还是职工缴纳？","expected_title":"中华人民共和国社会保险法","expected_article":"第三十三条","expected_evidence":"职工不缴纳工伤保险费"}
+{"id":"social-unemployment","query":"领取失业保险金需要满足哪些条件？","expected_title":"中华人民共和国社会保险法","expected_article":"第四十五条","expected_evidence":"非因本人意愿中断就业"}
+{"id":"social-registration","query":"用人单位应当在用工后多少天内办理社会保险登记？","expected_title":"中华人民共和国社会保险法","expected_article":"第五十八条","expected_evidence":"自用工之日起三十日内"}
+{"id":"civil-limitation","query":"向法院请求保护一般民事权利的诉讼时效是几年？","expected_title":"中华人民共和国民法典","expected_article":"第一百八十八条","expected_evidence":"诉讼时效期间为三年"}
+{"id":"civil-liquidated-damages","query":"合同约定的违约金过分高于损失时能请求法院调低吗？","expected_title":"中华人民共和国民法典","expected_article":"第五百八十五条","expected_evidence":"可以根据当事人的请求予以适当减少"}

@@ -1,0 +1,111 @@
+:root {
+  --lexora-bg: #edf1f5;
+  --lexora-surface: #f8f9fb;
+  --lexora-raised: #ffffff;
+  --lexora-muted: #eef1f4;
+  --lexora-hover: #e7ebef;
+  --lexora-border: #d9dfe5;
+  --lexora-border-strong: #c6ced7;
+  --lexora-text: #191d1b;
+  --lexora-text-muted: #68716d;
+  --lexora-primary: #087a72;
+  --lexora-primary-hover: #06655f;
+  --lexora-primary-soft: #e1f2ef;
+  --lexora-ai: #c92f70;
+  --lexora-ai-soft: #fbe8f0;
+  --lexora-reference: #8a6100;
+  --lexora-reference-soft: #fff3cf;
+  --lexora-danger: #b42318;
+  --lexora-danger-soft: #fef0ee;
+  --lexora-focus: rgb(8 122 114 / 24%);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+    "Microsoft YaHei", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--lexora-bg);
+  color: var(--lexora-text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+button,
+input,
+select,
+textarea {
+  outline: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  box-shadow: 0 0 0 3px var(--lexora-focus);
+}
+
+::selection {
+  background: var(--lexora-primary-soft);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --lexora-bg: #111416;
+    --lexora-surface: #171a1d;
+    --lexora-raised: #1e2225;
+    --lexora-muted: #24292d;
+    --lexora-hover: #2c3236;
+    --lexora-border: #353c40;
+    --lexora-border-strong: #465055;
+    --lexora-text: #f2f5f3;
+    --lexora-text-muted: #a7b0ac;
+    --lexora-primary: #3ab5a8;
+    --lexora-primary-hover: #55c8bb;
+    --lexora-primary-soft: #173a36;
+    --lexora-ai: #ef67a2;
+    --lexora-ai-soft: #3b1d2c;
+    --lexora-reference: #e7bd56;
+    --lexora-reference-soft: #3b3118;
+    --lexora-danger: #ff8178;
+    --lexora-danger-soft: #3c2020;
+    color-scheme: dark;
+  }
+}

@@ -1,0 +1,62 @@
+[project]
+name = "lexora-ai"
+version = "0.1.0"
+description = "Lexora, an AI assistant for legal case analysis"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "agent-application-platform",
+    "alembic>=1.16.0,<2.0.0",
+    "asyncpg>=0.30.0,<1.0.0",
+    "docx2txt>=0.9,<1.0",
+    "fastapi>=0.116.0,<1.0.0",
+    "langchain-openai>=1.4.0,<2.0.0",
+    "north",
+    "pgvector>=0.3.0,<1.0.0",
+    "pypdf>=5.8.0,<7.0.0",
+    "pyyaml>=6.0.2,<7.0.0",
+    "pydantic-settings>=2.10.0,<3.0.0",
+    "python-multipart>=0.0.20,<1.0.0",
+    "rag-core",
+    "sqlalchemy[asyncio]>=2.0.40,<3.0.0",
+    "uvicorn>=0.35.0,<1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "aiosqlite>=0.21.0,<1.0.0",
+    "httpx>=0.28.0,<1.0.0",
+    "pytest>=8.4.0,<9.0.0",
+    "pytest-asyncio>=1.0.0,<2.0.0",
+    "ruff>=0.12.0,<1.0.0",
+]
+
+[tool.uv.sources]
+agent-application-platform = { path = "../dayboard/packages/agent-platform", editable = true }
+north = { git = "https://github.com/Notryag/north-agent.git", rev = "cd4247edc295601ef50b1486c48e0d56957db510", subdirectory = "packages/harness" }
+rag-core = { path = "../rag-core", editable = true }
+
+[project.scripts]
+lexora-api = "lexora_ai.main:run"
+lexora-case-law = "lexora_ai.case_law_cli:run"
+lexora-evaluate-legal-retrieval = "lexora_ai.evaluation.legal_retrieval:run"
+lexora-evaluate-case-law-retrieval = "lexora_ai.evaluation.case_law_retrieval:run"
+lexora-legal-sources = "lexora_ai.legal_sources_cli:run"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.uv.build-backend]
+module-name = "lexora_ai"
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12.0"]
+build-backend = "uv_build"

@@ -1,0 +1,74 @@
+{
+  "retriever": "lexical_ngram",
+  "corpus_sources": 7,
+  "corpus_chunks": 52,
+  "cases": 7,
+  "recall_at_1": 1.0,
+  "recall_at_3": 1.0,
+  "recall_at_5": 1.0,
+  "mrr_at_5": 1.0,
+  "failures": [],
+  "results": [
+    {
+      "id": "intermediary-bypass",
+      "expected": "指导案例1号",
+      "retrieved": [
+        "指导案例1号",
+        "指导性案例240号",
+        "指导案例64号"
+      ],
+      "relevant_rank": 1
+    },
+    {
+      "id": "execution-settlement",
+      "expected": "指导案例2号",
+      "retrieved": [
+        "指导案例2号"
+      ],
+      "relevant_rank": 1
+    },
+    {
+      "id": "car-sales-fraud",
+      "expected": "指导案例17号",
+      "retrieved": [
+        "指导案例17号",
+        "指导案例1号"
+      ],
+      "relevant_rank": 1
+    },
+    {
+      "id": "unsafe-food-compensation",
+      "expected": "指导案例23号",
+      "retrieved": [
+        "指导案例23号"
+      ],
+      "relevant_rank": 1
+    },
+    {
+      "id": "telecom-expiry-notice",
+      "expected": "指导案例64号",
+      "retrieved": [
+        "指导案例64号",
+        "指导案例17号",
+        "指导案例1号"
+      ],
+      "relevant_rank": 1
+    },
+    {
+      "id": "cooperation-employment",
+      "expected": "指导案例179号",
+      "retrieved": [
+        "指导案例179号"
+      ],
+      "relevant_rank": 1
+    },
+    {
+      "id": "platform-driver-employment",
+      "expected": "指导性案例240号",
+      "retrieved": [
+        "指导性案例240号"
+      ],
+      "relevant_rank": 1
+    }
+  ]
+}

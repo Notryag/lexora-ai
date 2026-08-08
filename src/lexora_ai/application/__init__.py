@@ -1,0 +1,73 @@
+"""Lexora application use cases."""
+
+from lexora_ai.application.analyze_case import AnalyzeCaseService
+from lexora_ai.application.case_law_sources import CaseLawSourceService
+from lexora_ai.application.case_law_sync import (
+    CaseLawConnector,
+    CaseLawSyncResult,
+    CaseLawSyncService,
+)
+from lexora_ai.application.case_workspace import CaseWorkspaceService
+from lexora_ai.application.converse import LegalConversationService
+from lexora_ai.application.errors import (
+    CaseNotFoundError,
+    DuplicateLegalSourceError,
+    EmbeddingUnavailableError,
+    LegalSourceNotFoundError,
+    MaterialLimitError,
+    MaterialNotFoundError,
+    MaterialParseError,
+)
+from lexora_ai.application.legal_source_sync import (
+    LegalSourceConnector,
+    LegalSourceSyncResult,
+    LegalSourceSyncService,
+)
+from lexora_ai.application.legal_sources import LegalSourceService
+from lexora_ai.application.persistent_conversation import PersistentLegalConversationService
+from lexora_ai.application.ports import (
+    CaseAnalysisGateway,
+    CaseLawKnowledgePort,
+    ConversationCaseLawChunk,
+    ConversationContextMessage,
+    ConversationEvidenceChunk,
+    ConversationLegalChunk,
+    EmbeddingGateway,
+    GeneratedCaseAnalysis,
+    GeneratedConversationTurn,
+    LegalConversationGateway,
+    LegalKnowledgePort,
+)
+
+__all__ = [
+    "AnalyzeCaseService",
+    "CaseAnalysisGateway",
+    "CaseLawConnector",
+    "CaseLawKnowledgePort",
+    "CaseLawSourceService",
+    "CaseLawSyncResult",
+    "CaseLawSyncService",
+    "CaseNotFoundError",
+    "CaseWorkspaceService",
+    "ConversationContextMessage",
+    "ConversationCaseLawChunk",
+    "ConversationEvidenceChunk",
+    "ConversationLegalChunk",
+    "DuplicateLegalSourceError",
+    "EmbeddingGateway",
+    "EmbeddingUnavailableError",
+    "GeneratedCaseAnalysis",
+    "GeneratedConversationTurn",
+    "LegalConversationGateway",
+    "LegalKnowledgePort",
+    "LegalConversationService",
+    "LegalSourceNotFoundError",
+    "LegalSourceConnector",
+    "LegalSourceSyncResult",
+    "LegalSourceSyncService",
+    "LegalSourceService",
+    "MaterialLimitError",
+    "MaterialNotFoundError",
+    "MaterialParseError",
+    "PersistentLegalConversationService",
+]

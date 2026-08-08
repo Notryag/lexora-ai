@@ -15,6 +15,7 @@ export type CaseProfile = {
 export type CaseMaterial = components["schemas"]["CaseMaterial"];
 export type StoredCaseMaterial = components["schemas"]["StoredCaseMaterial"];
 export type PersistedMessage = components["schemas"]["CaseConversationMessage"];
+export type CaseRun = components["schemas"]["CaseRun"];
 
 function requireData<T>(data: T | undefined, error: unknown): T {
   if (data === undefined) throw new Error(apiErrorMessage(error));
@@ -116,10 +117,29 @@ export async function listMessages(caseId: string): Promise<PersistedMessage[]> 
   return requireData(data, error);
 }
 
-export async function sendCaseMessage(caseId: string, message: string) {
+export async function sendCaseMessage(
+  caseId: string,
+  message: string,
+  signal?: AbortSignal,
+) {
   const { data, error } = await apiClient.POST("/api/v1/cases/{case_id}/messages", {
     params: { path: { case_id: caseId } },
     body: { message },
+    signal,
+  });
+  return requireData(data, error);
+}
+
+export async function getCaseRun(caseId: string): Promise<CaseRun | null> {
+  const { data, error } = await apiClient.GET("/api/v1/cases/{case_id}/run", {
+    params: { path: { case_id: caseId } },
+  });
+  return requireData(data, error);
+}
+
+export async function cancelCaseRun(caseId: string): Promise<CaseRun> {
+  const { data, error } = await apiClient.POST("/api/v1/cases/{case_id}/run/cancel", {
+    params: { path: { case_id: caseId } },
   });
   return requireData(data, error);
 }

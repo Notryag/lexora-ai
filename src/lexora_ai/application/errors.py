@@ -32,3 +32,15 @@ class CaseLawSourceNotFoundError(LookupError):
 
 class DuplicateCaseLawSourceError(ValueError):
     pass
+
+
+class CaseRunNotFoundError(LookupError):
+    pass
+
+
+class ActiveCaseRunNotFoundError(LookupError):
+    pass
+
+
+class RunCancelledError(RuntimeError):
+    pass

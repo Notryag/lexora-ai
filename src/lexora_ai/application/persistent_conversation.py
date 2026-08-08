@@ -11,7 +11,7 @@ from agent_platform.application import (
 from agent_platform.core import ActiveThreadRunError, PresentationEnvelope, UserContext
 from sqlalchemy.exc import IntegrityError
 
-from lexora_ai.application.errors import CaseNotFoundError
+from lexora_ai.application.errors import CaseNotFoundError, RunCancelledError
 from lexora_ai.application.ports import (
     CaseLawKnowledgePort,
     ConversationCaseLawChunk,
@@ -260,13 +260,15 @@ class PersistentLegalConversationService:
             content = generated.content.strip()
             if not content:
                 raise RuntimeError("conversation provider returned an empty response")
-            await self._mark_completed(
+            completed = await self._mark_completed(
                 run_id=submission.run_id,
                 thread_id=thread.id,
                 content=content,
                 legal_citations=legal_citations,
                 case_law_citations=case_law_citations,
             )
+            if not completed:
+                raise RunCancelledError("This analysis was cancelled")
         except BaseException as exc:
             await self._mark_failed(submission.run_id, exc)
             raise
@@ -339,7 +341,7 @@ class PersistentLegalConversationService:
         content: str,
         legal_citations: list[LegalCitation],
         case_law_citations: list[CaseLawCitation],
-    ) -> None:
+    ) -> bool:
         async with self._session_factory() as session:
             unit_of_work = LexoraUnitOfWork(session)
             runs = AgentRunService(unit_of_work)
@@ -349,7 +351,7 @@ class PersistentLegalConversationService:
                 run,
                 result_message=content,
             ):
-                raise RuntimeError("failed to complete persisted run")
+                return False
             await ConversationService(unit_of_work).upsert_assistant_message(
                 self._context,
                 thread_id=thread_id,
@@ -370,6 +372,7 @@ class PersistentLegalConversationService:
                 ),
             )
             await unit_of_work.commit()
+            return True
 
     @staticmethod
     def _citation_payload(message: object) -> dict[str, object]:

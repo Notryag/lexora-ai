@@ -7,9 +7,11 @@ from lexora_ai.application.case_law_sync import (
     CaseLawSyncResult,
     CaseLawSyncService,
 )
+from lexora_ai.application.case_runs import CaseRunService
 from lexora_ai.application.case_workspace import CaseWorkspaceService
 from lexora_ai.application.converse import LegalConversationService
 from lexora_ai.application.errors import (
+    ActiveCaseRunNotFoundError,
     CaseNotFoundError,
     DuplicateLegalSourceError,
     EmbeddingUnavailableError,
@@ -17,6 +19,7 @@ from lexora_ai.application.errors import (
     MaterialLimitError,
     MaterialNotFoundError,
     MaterialParseError,
+    RunCancelledError,
 )
 from lexora_ai.application.legal_source_sync import (
     LegalSourceConnector,
@@ -41,12 +44,14 @@ from lexora_ai.application.ports import (
 
 __all__ = [
     "AnalyzeCaseService",
+    "ActiveCaseRunNotFoundError",
     "CaseAnalysisGateway",
     "CaseLawConnector",
     "CaseLawKnowledgePort",
     "CaseLawSourceService",
     "CaseLawSyncResult",
     "CaseLawSyncService",
+    "CaseRunService",
     "CaseNotFoundError",
     "CaseWorkspaceService",
     "ConversationContextMessage",
@@ -70,4 +75,5 @@ __all__ = [
     "MaterialNotFoundError",
     "MaterialParseError",
     "PersistentLegalConversationService",
+    "RunCancelledError",
 ]

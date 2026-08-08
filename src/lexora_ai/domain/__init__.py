@@ -27,6 +27,7 @@ from lexora_ai.domain.legal_knowledge import (
     LegalSourceSummary,
     LegalSourceUpdate,
 )
+from lexora_ai.domain.runs import CaseRun, CaseRunStatus
 from lexora_ai.domain.workspaces import (
     CaseConversationMessage,
     CaseConversationTurnRequest,
@@ -51,6 +52,8 @@ __all__ = [
     "CaseLawSourceSummary",
     "CaseLawSourceUpdate",
     "CaseLawStatus",
+    "CaseRun",
+    "CaseRunStatus",
     "CaseMaterial",
     "CaseProfile",
     "CaseProfileUpdate",

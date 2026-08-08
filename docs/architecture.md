@@ -133,11 +133,16 @@ Completed: the initial seven-source Supreme People's Court guiding-case set has 
 review, retrieval, prompt, citation, and UI path. Its 52 chunks and seven grounded lexical queries
 currently reach Recall@1/3/5 and MRR@5 of 1.0; this small-set result is not answer-quality evidence.
 
+Completed: each persistent case conversation exposes the latest Agent Platform Run status and allows
+the personal user to cancel queued or running analysis. A cancelled run cannot later be overwritten
+by a late model response, and the browser aborts its waiting request after the server records the
+cancellation.
+
 1. Add update checks against primary sources while retaining human confirmation.
 2. Maintain case state incrementally during conversation and surface only conflicts for confirmation.
 3. Expand case retrieval beyond the initial guiding-case slice using measured user needs and a
    source with stable official provenance.
-4. Run status, cancellation, startup recovery, and idempotent HTTP submission.
+4. Add startup recovery and idempotent HTTP submission for interrupted requests.
 5. Authentication and authorization before any multi-user release.
 
 Each slice must remain usable and testable on its own. Do not begin by copying the complete RAG

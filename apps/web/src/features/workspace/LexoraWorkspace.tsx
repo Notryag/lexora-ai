@@ -13,6 +13,8 @@ import {
   type CaseProfile,
   createCase,
   deleteMaterial,
+  cancelCaseRun,
+  getCaseRun,
   listCases,
   listMaterials,
   listMessages,
@@ -40,6 +42,7 @@ export function LexoraWorkspace() {
   const [materialPanelOpen, setMaterialPanelOpen] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const conversationCaseIdRef = useRef<string | null>(null);
+  const conversationAbortRef = useRef<AbortController | null>(null);
 
   const casesQuery = useQuery({ queryKey: ["cases"], queryFn: listCases });
   const activeCaseId = draftMode
@@ -75,7 +78,9 @@ export function LexoraWorkspace() {
     mutationFn: async ({ message }: { message: string }) => {
       const caseId = await ensureCase();
       conversationCaseIdRef.current = caseId;
-      return sendCaseMessage(caseId, message);
+      const controller = new AbortController();
+      conversationAbortRef.current = controller;
+      return sendCaseMessage(caseId, message, controller.signal);
     },
     onSettled: async (result) => {
       const caseId = result?.case_id ?? conversationCaseIdRef.current;
@@ -86,7 +91,21 @@ export function LexoraWorkspace() {
         ]);
       }
       conversationCaseIdRef.current = null;
+      conversationAbortRef.current = null;
       setPendingUserMessage(null);
+    },
+  });
+
+  const runQuery = useQuery({
+    queryKey: ["case-run", activeCaseId],
+    queryFn: () => getCaseRun(activeCaseId as string),
+    enabled: activeCaseId !== null,
+    refetchInterval: conversation.isPending ? 1_000 : false,
+  });
+  const cancelMutation = useMutation({
+    mutationFn: () => cancelCaseRun(activeCaseId as string),
+    onSuccess: (run) => {
+      queryClient.setQueryData(["case-run", activeCaseId], run);
     },
   });
 
@@ -235,12 +254,24 @@ export function LexoraWorkspace() {
       <ConversationPanel
         caseTitle={displayedCaseTitle}
         error={error}
+        isCancelling={cancelMutation.isPending}
         isSubmitting={conversation.isPending}
         materialCount={materials.length}
         profileItemCount={profileItemCount}
         messages={messages}
         onCaseTitleChange={setCaseTitle}
         onCaseTitleCommit={() => void titleMutation.mutate()}
+        onCancel={() => {
+          if (
+            activeCaseId
+            && runQuery.data
+            && ["queued", "running"].includes(runQuery.data.status)
+          ) {
+            void cancelMutation.mutateAsync().finally(() => {
+              conversationAbortRef.current?.abort();
+            });
+          }
+        }}
         onOpenMaterials={() => setMaterialPanelOpen(true)}
         onOpenProfile={() => setProfilePanelOpen(true)}
         onSend={sendMessage}

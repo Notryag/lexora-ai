@@ -4,12 +4,14 @@ from collections.abc import AsyncIterator
 from uuid import UUID
 
 import pytest
+from agent_platform.application import AgentRunService
 from agent_platform.core import UserContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from lexora_ai.application import (
     CaseLawSourceService,
+    CaseRunService,
     CaseWorkspaceService,
     ConversationCaseLawChunk,
     ConversationContextMessage,
@@ -20,6 +22,7 @@ from lexora_ai.application import (
     PersistentLegalConversationService,
 )
 from lexora_ai.db.models import Base
+from lexora_ai.db.unit_of_work import LexoraUnitOfWork
 from lexora_ai.domain import (
     CaseConversationTurnRequest,
     CaseLawSourceCreate,
@@ -271,6 +274,38 @@ async def test_approved_case_law_is_retrieved_and_persisted_separately(
     assert gateway.case_law_authorities[0][0].source_url == source.source_url
     assert messages[-1].case_law_citations == result.case_law_citations
     assert messages[-1].legal_citations == []
+
+
+@pytest.mark.asyncio
+async def test_case_run_can_be_cancelled_and_remains_visible(session_factory) -> None:
+    context = UserContext(
+        user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        timezone="Asia/Shanghai",
+        locale="zh-CN",
+    )
+    workspace = CaseWorkspaceService(session_factory, context, parse_material_file)
+    case = await workspace.create_case(LegalCaseCreate(title="待取消分析"))
+    async with session_factory() as session:
+        unit_of_work = LexoraUnitOfWork(session)
+        thread = await unit_of_work.threads.get_or_create_for_case(
+            context,
+            case_id=case.id,
+            title=case.title,
+        )
+        run = await AgentRunService(unit_of_work).create_run(
+            context,
+            input_message="测试取消",
+            thread_id=thread.id,
+        )
+        await unit_of_work.commit()
+
+    service = CaseRunService(session_factory, context)
+    assert (await service.get_latest(case.id)).status.value == "queued"
+    cancelled = await service.cancel_active(case.id)
+
+    assert cancelled.run_id == run.id
+    assert cancelled.status.value == "cancelled"
+    assert (await service.get_latest(case.id)).status.value == "cancelled"
 
 
 @pytest.mark.asyncio

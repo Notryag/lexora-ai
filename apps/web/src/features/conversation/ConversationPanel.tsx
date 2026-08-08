@@ -7,6 +7,7 @@ import {
   ExternalLink,
   Scale,
   SendHorizontal,
+  Square,
 } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
@@ -18,6 +19,7 @@ type ConversationPanelProps = {
   caseTitle: string;
   error: string | null;
   isSubmitting: boolean;
+  isCancelling: boolean;
   materialCount: number;
   profileItemCount: number;
   messages: ChatMessage[];
@@ -26,6 +28,7 @@ type ConversationPanelProps = {
   onOpenMaterials: () => void;
   onOpenProfile: () => void;
   onSend: (message: string) => void;
+  onCancel: () => void;
 };
 
 function assistantMarkdown(text: string) {
@@ -36,6 +39,7 @@ export function ConversationPanel({
   caseTitle,
   error,
   isSubmitting,
+  isCancelling,
   materialCount,
   profileItemCount,
   messages,
@@ -44,6 +48,7 @@ export function ConversationPanel({
   onOpenMaterials,
   onOpenProfile,
   onSend,
+  onCancel,
 }: ConversationPanelProps) {
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -194,16 +199,29 @@ export function ConversationPanel({
             rows={2}
             value={draft}
           />
-          <button
-            aria-label="发送"
-            className={styles.sendButton}
-            disabled={!draft.trim() || isSubmitting}
-            onClick={submit}
-            title="发送"
-            type="button"
-          >
-            <SendHorizontal aria-hidden="true" size={20} />
-          </button>
+          {isSubmitting ? (
+            <button
+              aria-label="取消分析"
+              className={styles.cancelButton}
+              disabled={isCancelling}
+              onClick={onCancel}
+              title="取消分析"
+              type="button"
+            >
+              <Square aria-hidden="true" fill="currentColor" size={17} />
+            </button>
+          ) : (
+            <button
+              aria-label="发送"
+              className={styles.sendButton}
+              disabled={!draft.trim()}
+              onClick={submit}
+              title="发送"
+              type="button"
+            >
+              <SendHorizontal aria-hidden="true" size={20} />
+            </button>
+          )}
         </div>
         <p className={styles.disclaimer}>AI 分析仅用于案件研究和材料整理，不构成法律意见。</p>
       </div>

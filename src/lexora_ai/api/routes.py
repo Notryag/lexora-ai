@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from pydantic import BaseModel
 
 from lexora_ai.application import (
+    ActiveCaseRunNotFoundError,
     AnalyzeCaseService,
     CaseNotFoundError,
+    CaseRunService,
     CaseWorkspaceService,
     DuplicateLegalSourceError,
     EmbeddingUnavailableError,
@@ -20,6 +22,7 @@ from lexora_ai.application import (
     MaterialNotFoundError,
     MaterialParseError,
     PersistentLegalConversationService,
+    RunCancelledError,
 )
 from lexora_ai.domain import (
     CaseAnalysisRequest,
@@ -29,6 +32,7 @@ from lexora_ai.domain import (
     CaseConversationTurnResult,
     CaseMaterial,
     CaseProfileUpdate,
+    CaseRun,
     ConversationTurnRequest,
     ConversationTurnResult,
     LegalCase,
@@ -45,6 +49,7 @@ from lexora_ai.infrastructure import ModelNotConfiguredError
 
 from .dependencies import (
     get_analyze_case_service,
+    get_case_run_service,
     get_case_workspace_service,
     get_legal_conversation_service,
     get_legal_source_service,
@@ -357,6 +362,40 @@ async def create_case_conversation_turn(
         ) from exc
     except ActiveThreadRunError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except RunCancelledError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.get(
+    "/cases/{case_id}/run",
+    response_model=CaseRun | None,
+    tags=["case conversations"],
+)
+async def get_case_run(
+    case_id: UUID,
+    service: Annotated[CaseRunService, Depends(get_case_run_service)],
+) -> CaseRun | None:
+    try:
+        return await service.get_latest(case_id)
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.post(
+    "/cases/{case_id}/run/cancel",
+    response_model=CaseRun,
+    tags=["case conversations"],
+)
+async def cancel_case_run(
+    case_id: UUID,
+    service: Annotated[CaseRunService, Depends(get_case_run_service)],
+) -> CaseRun:
+    try:
+        return await service.cancel_active(case_id)
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ActiveCaseRunNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.get(
@@ -375,4 +414,3 @@ async def list_case_conversation_messages(
         return await service.list_messages(case_id)
     except CaseNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-

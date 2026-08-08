@@ -298,6 +298,22 @@
   background: var(--lexora-primary-hover);
 }
 
+.cancelButton {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--lexora-danger);
+  border-radius: var(--radius-md);
+  background: var(--lexora-danger-soft);
+  color: var(--lexora-danger);
+}
+
+.cancelButton:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lexora-danger-soft), var(--lexora-danger) 12%);
+}
+
 .error {
   width: min(760px, 100%);
   margin: 0 auto var(--space-2);

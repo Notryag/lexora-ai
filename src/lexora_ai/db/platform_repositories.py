@@ -156,6 +156,19 @@ class ConversationThreadRepository:
         )
         return thread_from_row(row) if row else None
 
+    async def get_for_case(
+        self,
+        context: UserContext,
+        case_id: UUID,
+    ) -> ConversationThread | None:
+        row = await self.session.scalar(
+            select(ConversationThreadRow).where(
+                ConversationThreadRow.owner_id == context.user_id,
+                ConversationThreadRow.case_id == case_id,
+            )
+        )
+        return thread_from_row(row) if row else None
+
     async def get_or_create_primary(self, context: UserContext) -> ConversationThread:
         row = await self.session.scalar(
             select(ConversationThreadRow).where(
@@ -386,6 +399,22 @@ class AgentRunRepository:
                 AgentRunRow.thread_id == thread_id,
                 AgentRunRow.status.in_([AgentRunStatus.queued.value, AgentRunStatus.running.value]),
             )
+        )
+        return run_from_row(row) if row else None
+
+    async def get_latest_for_thread(
+        self,
+        context: UserContext,
+        thread_id: UUID,
+    ) -> AgentRun | None:
+        row = await self.session.scalar(
+            select(AgentRunRow)
+            .where(
+                AgentRunRow.owner_id == context.user_id,
+                AgentRunRow.thread_id == thread_id,
+            )
+            .order_by(AgentRunRow.updated_at.desc(), AgentRunRow.created_at.desc())
+            .limit(1)
         )
         return run_from_row(row) if row else None
 

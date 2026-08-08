@@ -7,6 +7,7 @@ from agent_platform.core import UserContext
 from lexora_ai.application import (
     AnalyzeCaseService,
     CaseLawSourceService,
+    CaseRunService,
     CaseWorkspaceService,
     LegalConversationService,
     LegalSourceService,
@@ -89,6 +90,11 @@ def get_legal_source_service() -> LegalSourceService:
 @lru_cache(maxsize=1)
 def get_case_law_source_service() -> CaseLawSourceService:
     return CaseLawSourceService(get_session_factory(), get_embedding_gateway())
+
+
+@lru_cache(maxsize=1)
+def get_case_run_service() -> CaseRunService:
+    return CaseRunService(get_session_factory(), get_personal_user_context())
 
 
 @lru_cache(maxsize=1)

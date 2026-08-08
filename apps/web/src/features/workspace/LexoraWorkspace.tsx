@@ -178,6 +178,32 @@ export function LexoraWorkspace() {
     conversation.mutate({ message });
   }
 
+  function exportCaseRecord() {
+    const title = displayedCaseTitle.trim() || "未命名案件";
+    const sections = messages.map((message) => {
+      const heading = message.role === "assistant" ? "法析 Lexora" : "用户";
+      const citations = message.legalCitations?.length
+        ? `\n\n法规依据：\n${message.legalCitations.map((citation) =>
+          `- [${citation.title} - ${citation.article_label ?? "相关条文"}](${citation.source_url}) ${citation.reference}`
+        ).join("\n")}`
+        : "";
+      const caseLaw = message.caseLawCitations?.length
+        ? `\n\n类案参考：\n${message.caseLawCitations.map((citation) =>
+          `- [${citation.case_number} ${citation.title}](${citation.source_url}) ${citation.reference}`
+        ).join("\n")}`
+        : "";
+      return `### ${heading}\n\n${message.text}${citations}${caseLaw}`;
+    });
+    const markdown = `# ${title}\n\n导出时间：${new Date().toLocaleString("zh-CN")}\n\n${sections.join("\n\n")}\n`;
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${title.replace(/[\\/:*?"<>|]/g, "-") || "lexora-case"}.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   function newAnalysis() {
     setSelectedCaseId(null);
     setDraftMode(true);
@@ -261,6 +287,7 @@ export function LexoraWorkspace() {
         messages={messages}
         onCaseTitleChange={setCaseTitle}
         onCaseTitleCommit={() => void titleMutation.mutate()}
+        onExport={exportCaseRecord}
         onCancel={() => {
           if (
             activeCaseId

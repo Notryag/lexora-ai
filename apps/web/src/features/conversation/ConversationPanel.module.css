@@ -44,7 +44,8 @@
 }
 
 .profileButton,
-.materialButton {
+.materialButton,
+.exportButton {
   min-height: 40px;
   align-items: center;
   gap: 7px;
@@ -56,6 +57,10 @@
 }
 
 .profileButton {
+  display: inline-flex;
+}
+
+.exportButton {
   display: inline-flex;
 }
 
@@ -370,10 +375,15 @@
   }
 
   .profileButton,
-  .materialButton {
+  .materialButton,
+  .exportButton {
     width: 40px;
     justify-content: center;
     padding: 0;
+  }
+
+  .exportButton span {
+    display: none;
   }
 
   .profileButton span,

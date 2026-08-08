@@ -4,6 +4,7 @@ import {
   BookOpenCheck,
   BookOpenText,
   ClipboardList,
+  Download,
   ExternalLink,
   Scale,
   SendHorizontal,
@@ -27,6 +28,7 @@ type ConversationPanelProps = {
   onCaseTitleCommit: () => void;
   onOpenMaterials: () => void;
   onOpenProfile: () => void;
+  onExport: () => void;
   onSend: (message: string) => void;
   onCancel: () => void;
 };
@@ -47,6 +49,7 @@ export function ConversationPanel({
   onCaseTitleCommit,
   onOpenMaterials,
   onOpenProfile,
+  onExport,
   onSend,
   onCancel,
 }: ConversationPanelProps) {
@@ -90,6 +93,16 @@ export function ConversationPanel({
           />
         </div>
         <div className={styles.headerActions}>
+          <button
+            aria-label="导出案件记录"
+            className={styles.exportButton}
+            onClick={onExport}
+            title="导出案件记录"
+            type="button"
+          >
+            <Download aria-hidden="true" size={18} />
+            <span>导出</span>
+          </button>
           <button className={styles.profileButton} onClick={onOpenProfile} type="button">
             <ClipboardList aria-hidden="true" size={18} />
             <span>档案 {profileItemCount}</span>

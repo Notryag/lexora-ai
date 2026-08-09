@@ -65,6 +65,8 @@ def test_conversation_prompt_delegates_retrieval_choice_to_agent() -> None:
 
     assert "按需自主调用" in prompt
     assert "纯寒暄" in prompt
+    assert "300 个中文字符以内" in LEXORA_SYSTEM_PROMPT
+    assert "不要一边声称信息" in LEXORA_SYSTEM_PROMPT
     assert payload["retrieved_material_chunks"] == []
 
 

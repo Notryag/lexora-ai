@@ -103,15 +103,25 @@ test("persists material and continues a cited legal conversation", async ({ page
           thread_id: threadId,
           run_id: runId,
           role: "assistant",
-          content: "现有工资记录能够支持拖欠工资的初步主张 [M1:C1]，相关规则见法规引用。",
-          legal_citations: [{
-            reference: "L1234567890abcdef:C30",
-            title: "中华人民共和国劳动合同法",
-            article_label: "第三十条",
-            issuing_authority: "全国人民代表大会常务委员会",
-            source_url: "https://flk.npc.gov.cn/detail?id=test",
-            status: "effective",
-          }],
+          content: "现有工资记录能够支持拖欠工资的初步主张 [M1:C1]，工资支付规则见 [L1234567890abcdef:C30]。",
+          legal_citations: [
+            {
+              reference: "L1234567890abcdef:C30",
+              title: "中华人民共和国劳动合同法",
+              article_label: "第三十条",
+              issuing_authority: "全国人民代表大会常务委员会",
+              source_url: "https://flk.npc.gov.cn/detail?id=test",
+              status: "effective",
+            },
+            {
+              reference: "L1234567890abcdef:C50",
+              title: "未在正文使用的法规",
+              article_label: "第五十条",
+              issuing_authority: "全国人民代表大会常务委员会",
+              source_url: "https://flk.npc.gov.cn/detail?id=unused",
+              status: "effective",
+            },
+          ],
           created_at: "2026-08-08T00:00:02Z",
         },
       );
@@ -119,7 +129,7 @@ test("persists material and continues a cited legal conversation", async ({ page
         contentType: "application/x-ndjson",
         body: [
           JSON.stringify({ type: "delta", delta: "现有工资记录能够" }),
-          JSON.stringify({ type: "delta", delta: "支持拖欠工资的初步主张 [M1:C1]，相关规则见法规引用。" }),
+          JSON.stringify({ type: "delta", delta: "支持拖欠工资的初步主张 [M1:C1]，工资支付规则见 [L1234567890abcdef:C30]。" }),
           JSON.stringify({ type: "complete", result: {
           case_id: caseId,
           thread_id: threadId,
@@ -158,6 +168,9 @@ test("persists material and continues a cited legal conversation", async ({ page
 
   await expect(page.getByText("现有工资记录能够支持拖欠工资的初步主张")).toBeVisible();
   await expect(page.getByText("[M1:C1]", { exact: true })).toBeVisible();
+  await expect(page.getByText("[1]", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("L1234567890abcdef:C30", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("未在正文使用的法规", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /中华人民共和国劳动合同法/ })).toHaveAttribute(
     "href",
     "https://flk.npc.gov.cn/detail?id=test",

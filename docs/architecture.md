@@ -118,6 +118,11 @@ message is persisted once at submission and the assistant message once at succes
 The browser does not poll the Run or refetch messages while text is streaming; it refreshes durable
 state once after completion.
 
+Retrieved authorities are candidates, not citations. Lexora persists and returns only references
+that the final answer actually cites, in first-use order. Durable messages retain stable internal
+references for provenance, while the presentation layer maps statute and case-law references to
+compact `[1]`, `[2]` markers and hides unused legacy citation cards.
+
 ## Dependency Rules
 
 - `domain` has no FastAPI, North, database, or provider imports.

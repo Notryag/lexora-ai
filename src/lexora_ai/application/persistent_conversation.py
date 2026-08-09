@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
+from typing import TypeVar
 from uuid import UUID
 
 from agent_platform.application import (
@@ -37,6 +39,11 @@ from lexora_ai.domain import (
 from lexora_ai.material_context import MaterialContextChunk, rank_material_context
 
 logger = logging.getLogger(__name__)
+
+AUTHORITY_REFERENCE_PATTERN = re.compile(
+    r"\[((?:L[A-Za-z0-9-]+:C\d+|C[A-Za-z0-9-]+:S\d+))\]"
+)
+CitationChunk = TypeVar("CitationChunk")
 
 
 class _AgentControlledRetrieval:
@@ -323,26 +330,20 @@ class PersistentLegalConversationService:
                     source_url=chunk.source_url,
                     status=chunk.status,
                 )
-                for chunk in retrieval.legal_authorities.values()
+                for chunk in _cited_chunks(content, retrieval.legal_authorities)
             ]
-            case_law_citations: list[CaseLawCitation] = []
-            cited_case_sources: set[tuple[str, str]] = set()
-            for chunk in retrieval.case_law_authorities.values():
-                source_key = (chunk.case_number, chunk.source_url)
-                if source_key in cited_case_sources:
-                    continue
-                cited_case_sources.add(source_key)
-                case_law_citations.append(
-                    CaseLawCitation(
-                        reference=chunk.reference,
-                        case_number=chunk.case_number,
-                        title=chunk.title,
-                        section_label=chunk.section_label,
-                        issuing_authority=chunk.issuing_authority,
-                        source_url=chunk.source_url,
-                        published_on=chunk.published_on,
-                    )
+            case_law_citations = [
+                CaseLawCitation(
+                    reference=chunk.reference,
+                    case_number=chunk.case_number,
+                    title=chunk.title,
+                    section_label=chunk.section_label,
+                    issuing_authority=chunk.issuing_authority,
+                    source_url=chunk.source_url,
+                    published_on=chunk.published_on,
                 )
+                for chunk in _cited_chunks(content, retrieval.case_law_authorities)
+            ]
             completed = await self._mark_completed(
                 run_id=submission.run_id,
                 thread_id=thread.id,
@@ -480,3 +481,16 @@ class PersistentLegalConversationService:
                     error_message=str(error)[:4000] or "conversation failed",
                 )
                 await unit_of_work.commit()
+
+
+def _cited_chunks(
+    content: str, available: dict[str, CitationChunk]
+) -> list[CitationChunk]:
+    cited: list[CitationChunk] = []
+    seen: set[str] = set()
+    for reference in AUTHORITY_REFERENCE_PATTERN.findall(content):
+        if reference in seen or reference not in available:
+            continue
+        seen.add(reference)
+        cited.append(available[reference])
+    return cited

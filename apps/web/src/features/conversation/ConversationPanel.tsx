@@ -14,6 +14,11 @@ import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 
 import type { ChatMessage } from "./types";
+import {
+  citationMarkers,
+  citedSources,
+  presentAssistantMarkdown,
+} from "./citationPresentation";
 import styles from "./ConversationPanel.module.css";
 
 type ConversationPanelProps = {
@@ -32,10 +37,6 @@ type ConversationPanelProps = {
   onSend: (message: string) => void;
   onCancel: () => void;
 };
-
-function assistantMarkdown(text: string) {
-  return text.replace(/\[((?:M\d+:C\d+|L[a-f0-9]+:C\d+|C[a-f0-9]+:S\d+))\]/g, "`[$1]`");
-}
 
 export function ConversationPanel({
   caseTitle,
@@ -116,8 +117,12 @@ export function ConversationPanel({
 
       <div className={styles.messages} ref={scrollRef}>
         <div className={styles.messageColumn}>
-          {messages.map((message) => (
-            <article
+          {messages.map((message) => {
+            const markers = citationMarkers(message.text);
+            const legalCitations = citedSources(message.text, message.legalCitations);
+            const caseLawCitations = citedSources(message.text, message.caseLawCitations);
+            return (
+              <article
               className={`${styles.message} ${message.role === "user" ? styles.user : styles.assistant}`}
               key={message.id}
             >
@@ -126,17 +131,17 @@ export function ConversationPanel({
               ) : null}
               <div className={styles.messageBody}>
                 {message.role === "assistant" ? (
-                  <Markdown>{assistantMarkdown(message.text)}</Markdown>
+                  <Markdown>{presentAssistantMarkdown(message.text)}</Markdown>
                 ) : (
                   <p>{message.text}</p>
                 )}
-                {message.role === "assistant" && message.legalCitations?.length ? (
+                {message.role === "assistant" && legalCitations.length ? (
                   <section className={styles.legalSources} aria-label="法规依据">
                     <div className={styles.legalSourcesTitle}>
                       <BookOpenCheck aria-hidden="true" size={16} />
                       法规依据
                     </div>
-                    {message.legalCitations.map((citation) => (
+                    {legalCitations.map((citation) => (
                       <a
                         className={styles.legalSource}
                         href={citation.source_url}
@@ -150,19 +155,19 @@ export function ConversationPanel({
                             {citation.article_label ?? "相关条文"} · {citation.issuing_authority}
                           </small>
                         </span>
-                        <code>{citation.reference}</code>
+                        <code>[{markers.get(citation.reference)}]</code>
                         <ExternalLink aria-hidden="true" size={14} />
                       </a>
                     ))}
                   </section>
                 ) : null}
-                {message.role === "assistant" && message.caseLawCitations?.length ? (
+                {message.role === "assistant" && caseLawCitations.length ? (
                   <section className={styles.legalSources} aria-label="类案参考">
                     <div className={styles.legalSourcesTitle}>
                       <Scale aria-hidden="true" size={16} />
                       类案参考
                     </div>
-                    {message.caseLawCitations.map((citation) => (
+                    {caseLawCitations.map((citation) => (
                       <a
                         className={styles.legalSource}
                         href={citation.source_url}
@@ -176,15 +181,16 @@ export function ConversationPanel({
                             {citation.section_label} · {citation.issuing_authority}
                           </small>
                         </span>
-                        <code>{citation.reference}</code>
+                        <code>[{markers.get(citation.reference)}]</code>
                         <ExternalLink aria-hidden="true" size={14} />
                       </a>
                     ))}
                   </section>
                 ) : null}
               </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
 
           {isSubmitting && messages.at(-1)?.role !== "assistant" ? (
             <article className={`${styles.message} ${styles.assistant}`} aria-label="正在分析">

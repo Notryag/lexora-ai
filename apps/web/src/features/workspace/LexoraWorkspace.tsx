@@ -5,6 +5,11 @@ import { CirclePlus, MessageSquareText, Scale } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import { ConversationPanel } from "@/features/conversation/ConversationPanel";
+import {
+  citationMarkers,
+  citedSources,
+  presentAssistantText,
+} from "@/features/conversation/citationPresentation";
 import type { CaseMaterial, ChatMessage } from "@/features/conversation/types";
 import { MaterialPanel } from "@/features/materials/MaterialPanel";
 
@@ -205,17 +210,23 @@ export function LexoraWorkspace() {
     const title = displayedCaseTitle.trim() || "未命名案件";
     const sections = messages.map((message) => {
       const heading = message.role === "assistant" ? "法析 Lexora" : "用户";
-      const citations = message.legalCitations?.length
-        ? `\n\n法规依据：\n${message.legalCitations.map((citation) =>
-          `- [${citation.title} - ${citation.article_label ?? "相关条文"}](${citation.source_url}) ${citation.reference}`
+      const markers = citationMarkers(message.text);
+      const legalCitations = citedSources(message.text, message.legalCitations);
+      const caseLawCitations = citedSources(message.text, message.caseLawCitations);
+      const citations = legalCitations.length
+        ? `\n\n法规依据：\n${legalCitations.map((citation) =>
+          `- [${markers.get(citation.reference)}] [${citation.title} - ${citation.article_label ?? "相关条文"}](${citation.source_url})`
         ).join("\n")}`
         : "";
-      const caseLaw = message.caseLawCitations?.length
-        ? `\n\n类案参考：\n${message.caseLawCitations.map((citation) =>
-          `- [${citation.case_number} ${citation.title}](${citation.source_url}) ${citation.reference}`
+      const caseLaw = caseLawCitations.length
+        ? `\n\n类案参考：\n${caseLawCitations.map((citation) =>
+          `- [${markers.get(citation.reference)}] [${citation.case_number} ${citation.title}](${citation.source_url})`
         ).join("\n")}`
         : "";
-      return `### ${heading}\n\n${message.text}${citations}${caseLaw}`;
+      const content = message.role === "assistant"
+        ? presentAssistantText(message.text)
+        : message.text;
+      return `### ${heading}\n\n${content}${citations}${caseLaw}`;
     });
     const markdown = `# ${title}\n\n导出时间：${new Date().toLocaleString("zh-CN")}\n\n${sections.join("\n\n")}\n`;
     const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });

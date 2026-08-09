@@ -86,7 +86,8 @@ def build_legal_retrieval_tools(
             name="search_legal_authorities",
             description=(
                 "Search only verified official statutes for legal rules relevant to the current "
-                "question. Do not call for greetings, thanks, or non-legal conversation."
+                "question. Cite only the smallest set actually used in the answer. Do not call "
+                "for greetings, thanks, or non-legal conversation."
             ),
             args_schema=LegalContextSearchInput,
         ),
@@ -95,7 +96,8 @@ def build_legal_retrieval_tools(
             name="search_guiding_cases",
             description=(
                 "Search only reviewed official guiding cases when a comparable-case analysis "
-                "would materially help. Do not call for greetings or when statutes are sufficient."
+                "would materially help. Do not call for greetings, broad preliminary questions, "
+                "or when statutes are sufficient."
             ),
             args_schema=LegalContextSearchInput,
         ),

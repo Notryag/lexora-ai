@@ -70,8 +70,14 @@ class RecordingGateway:
         self.evidence.append(evidence)
         self.legal_authorities.append(legal_authorities)
         self.case_law_authorities.append(case_law_authorities)
+        cited_authorities = [
+            chunks[0].reference
+            for chunks in (legal_authorities, case_law_authorities)
+            if chunks
+        ]
+        citations = "".join(f" [{reference}]" for reference in cited_authorities)
         return GeneratedConversationTurn(
-            content=f"已记录：{request.message} [M1:C1]",
+            content=f"已记录：{request.message} [M1:C1]{citations}",
             runtime_thread_id=str(thread_id),
         )
 
@@ -265,6 +271,9 @@ async def test_effective_legal_source_is_retrieved_and_persisted_with_message(
     messages = await conversation.list_messages(case.id)
 
     assert result.legal_citations
+    assert len(result.legal_citations) == 1
+    assert len(gateway.legal_authorities[0]) == 2
+    assert f"[{result.legal_citations[0].reference}]" in result.assistant_message
     assert result.legal_citations[0].title == source.title
     assert gateway.legal_authorities[0][0].source_url.startswith("https://flk.npc.gov.cn/")
     assert messages[-1].legal_citations == result.legal_citations
@@ -351,6 +360,9 @@ async def test_approved_case_law_is_retrieved_and_persisted_separately(
     messages = await conversation.list_messages(case.id)
 
     assert result.case_law_citations
+    assert len(result.case_law_citations) == 1
+    assert len(gateway.case_law_authorities[0]) > 1
+    assert f"[{result.case_law_citations[0].reference}]" in result.assistant_message
     assert result.case_law_citations[0].case_number == source.case_number
     assert gateway.case_law_authorities[0]
     assert gateway.case_law_authorities[0][0].source_url == source.source_url

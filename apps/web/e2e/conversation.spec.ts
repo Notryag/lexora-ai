@@ -6,6 +6,7 @@ const threadId = "018f6f7c-3500-7c4a-83e7-64dd8aa83293";
 const runId = "018f6f7c-3500-7c4a-83e7-64dd8aa83294";
 
 test("persists material and continues a cited legal conversation", async ({ page }) => {
+  const conversationRequests: string[] = [];
   let created = false;
   let materialAdded = false;
   let profile = {
@@ -32,6 +33,10 @@ test("persists material and continues a cited legal conversation", async ({ page
     const request = route.request();
     const path = new URL(request.url()).pathname;
     const method = request.method();
+
+    if (path.includes("/messages") || path.endsWith("/run")) {
+      conversationRequests.push(`${method} ${path}`);
+    }
 
     if (path === "/api/v1/cases" && method === "GET") {
       await route.fulfill({ json: created ? [persistedCase] : [] });
@@ -82,7 +87,7 @@ test("persists material and continues a cited legal conversation", async ({ page
       await route.fulfill({ json: messages });
       return;
     }
-    if (path.endsWith("/messages") && method === "POST") {
+    if (path.endsWith("/messages/stream") && method === "POST") {
       messages.push(
         {
           id: "018f6f7c-3500-7c4a-83e7-64dd8aa83295",
@@ -111,14 +116,20 @@ test("persists material and continues a cited legal conversation", async ({ page
         },
       );
       await route.fulfill({
-        json: {
+        contentType: "application/x-ndjson",
+        body: [
+          JSON.stringify({ type: "delta", delta: "现有工资记录能够" }),
+          JSON.stringify({ type: "delta", delta: "支持拖欠工资的初步主张 [M1:C1]，相关规则见法规引用。" }),
+          JSON.stringify({ type: "complete", result: {
           case_id: caseId,
           thread_id: threadId,
           run_id: runId,
           assistant_message: messages[1].content as string,
           material_count: 1,
           legal_citations: messages[1].legal_citations,
-        },
+          case_law_citations: [],
+          } }),
+        ].join("\n") + "\n",
       });
       return;
     }
@@ -151,4 +162,8 @@ test("persists material and continues a cited legal conversation", async ({ page
     "href",
     "https://flk.npc.gov.cn/detail?id=test",
   );
+  expect(conversationRequests.filter((item) => item.startsWith("POST "))).toEqual([
+    `POST /api/v1/cases/${caseId}/messages/stream`,
+  ]);
+  expect(conversationRequests.some((item) => item.endsWith("/run"))).toBe(false);
 });

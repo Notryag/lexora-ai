@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from uuid import UUID
 
 from agent_platform.application import (
@@ -38,6 +39,144 @@ from lexora_ai.material_context import MaterialContextChunk, rank_material_conte
 logger = logging.getLogger(__name__)
 
 
+class _AgentControlledRetrieval:
+    def __init__(
+        self,
+        *,
+        query_context: str,
+        material_chunks: list[MaterialContextChunk],
+        embedding_gateway: EmbeddingGateway | None,
+        legal_knowledge: LegalKnowledgePort | None,
+        case_law_knowledge: CaseLawKnowledgePort | None,
+    ) -> None:
+        self._query_context = query_context
+        self._material_chunks = material_chunks
+        self._embedding_gateway = embedding_gateway
+        self._legal_knowledge = legal_knowledge
+        self._case_law_knowledge = case_law_knowledge
+        self._embedding_cache: dict[
+            str, tuple[tuple[float, ...] | None, str | None]
+        ] = {}
+        self.evidence: dict[str, ConversationEvidenceChunk] = {}
+        self.legal_authorities: dict[str, ConversationLegalChunk] = {}
+        self.case_law_authorities: dict[str, ConversationCaseLawChunk] = {}
+
+    async def _embedding(
+        self, query: str
+    ) -> tuple[tuple[float, ...] | None, str | None]:
+        query = query.strip()
+        if not query:
+            raise ValueError("retrieval query cannot be blank")
+        if query in self._embedding_cache:
+            return self._embedding_cache[query]
+        query_embedding: tuple[float, ...] | None = None
+        embedding_model: str | None = None
+        if self._embedding_gateway is not None:
+            try:
+                query_embedding = await self._embedding_gateway.embed_query(query)
+                embedding_model = self._embedding_gateway.model_name
+            except Exception:
+                logger.warning(
+                    "Query embedding failed; falling back to lexical retrieval",
+                    exc_info=True,
+                )
+        result = query_embedding, embedding_model
+        self._embedding_cache[query] = result
+        return result
+
+    async def search_materials(
+        self, query: str
+    ) -> tuple[ConversationEvidenceChunk, ...]:
+        query_embedding, embedding_model = await self._embedding(query)
+        evidence = tuple(
+            ConversationEvidenceChunk(
+                reference=chunk.reference,
+                material_id=chunk.material_id,
+                title=chunk.title,
+                kind=chunk.kind,
+                source_note=chunk.source_note,
+                content=chunk.content,
+            )
+            for chunk in rank_material_context(
+                query,
+                self._material_chunks,
+                query_embedding=query_embedding,
+                embedding_model=embedding_model,
+            )
+        )
+        self.evidence.update((chunk.reference, chunk) for chunk in evidence)
+        return evidence
+
+    async def search_legal_authorities(
+        self, query: str
+    ) -> tuple[ConversationLegalChunk, ...]:
+        query_embedding, embedding_model = await self._embedding(query)
+        authority_query = " ".join(
+            part for part in (self._query_context, query) if part
+        )
+        legal_chunks = (
+            await self._legal_knowledge.search(
+                authority_query,
+                query_embedding=query_embedding,
+                embedding_model=embedding_model,
+            )
+            if self._legal_knowledge is not None
+            else []
+        )
+        legal_authorities = tuple(
+            ConversationLegalChunk(
+                reference=chunk.reference,
+                title=chunk.title,
+                article_label=chunk.article_label,
+                issuing_authority=chunk.issuing_authority,
+                source_url=chunk.source_url,
+                status=chunk.status.value,
+                content=chunk.content,
+            )
+            for chunk in legal_chunks
+        )
+        self.legal_authorities.update(
+            (chunk.reference, chunk) for chunk in legal_authorities
+        )
+        return legal_authorities
+
+    async def search_case_law(
+        self, query: str
+    ) -> tuple[ConversationCaseLawChunk, ...]:
+        query_embedding, embedding_model = await self._embedding(query)
+        authority_query = " ".join(
+            part for part in (self._query_context, query) if part
+        )
+        case_law_chunks = (
+            await self._case_law_knowledge.search(
+                authority_query,
+                query_embedding=query_embedding,
+                embedding_model=embedding_model,
+            )
+            if self._case_law_knowledge is not None
+            else []
+        )
+        case_law_authorities = tuple(
+            ConversationCaseLawChunk(
+                reference=chunk.reference,
+                case_number=chunk.case_number,
+                title=chunk.title,
+                section_label=chunk.section_label,
+                issuing_authority=chunk.issuing_authority,
+                source_url=chunk.source_url,
+                published_on=(
+                    chunk.published_on.isoformat() if chunk.published_on else None
+                ),
+                content=chunk.content,
+            )
+            for chunk in case_law_chunks
+        )
+        self.case_law_authorities.update(
+            (chunk.reference, chunk) for chunk in case_law_authorities
+        )
+        return case_law_authorities
+
+
 class PersistentLegalConversationService:
     def __init__(
         self,
@@ -59,6 +198,8 @@ class PersistentLegalConversationService:
         self,
         case_id: UUID,
         request: CaseConversationTurnRequest,
+        *,
+        on_text_delta: Callable[[str], None] | None = None,
     ) -> CaseConversationTurnResult:
         async with self._session_factory() as session:
             unit_of_work = LexoraUnitOfWork(session)
@@ -120,55 +261,59 @@ class PersistentLegalConversationService:
                 for material in materials
             ],
         )
-        try:
-            query_embedding: tuple[float, ...] | None = None
-            embedding_model: str | None = None
-            if self._embedding_gateway is not None:
-                try:
-                    query_embedding = await self._embedding_gateway.embed_query(request.message)
-                    embedding_model = self._embedding_gateway.model_name
-                except Exception:
-                    logger.warning(
-                        "Query embedding failed; falling back to lexical retrieval",
-                        exc_info=True,
-                    )
-            retrieved_chunks = rank_material_context(
-                request.message,
-                [
-                    MaterialContextChunk(
-                        reference=chunk.reference,
-                        material_id=str(chunk.material_id),
-                        title=chunk.title,
-                        kind=chunk.kind.value,
-                        source_note=chunk.source_note,
-                        content=chunk.content,
-                        page_start=None,
-                        page_end=None,
-                        embedding=(tuple(chunk.embedding) if chunk.embedding is not None else None),
-                        embedding_model=chunk.embedding_model,
-                    )
-                    for chunk in stored_chunks
-                ],
-                query_embedding=query_embedding,
-                embedding_model=embedding_model,
-            )
-            legal_chunks = (
-                await self._legal_knowledge.search(
-                    " ".join(
-                        part
-                        for part in (
-                            case.title,
-                            case.profile.retrieval_text(),
-                            request.message,
-                        )
-                        if part
+        retrieval = _AgentControlledRetrieval(
+            query_context=" ".join(
+                part
+                for part in (case.title, case.profile.retrieval_text())
+                if part
+            ),
+            material_chunks=[
+                MaterialContextChunk(
+                    reference=chunk.reference,
+                    material_id=str(chunk.material_id),
+                    title=chunk.title,
+                    kind=chunk.kind.value,
+                    source_note=chunk.source_note,
+                    content=chunk.content,
+                    page_start=None,
+                    page_end=None,
+                    embedding=(
+                        tuple(chunk.embedding) if chunk.embedding is not None else None
                     ),
-                    query_embedding=query_embedding,
-                    embedding_model=embedding_model,
+                    embedding_model=chunk.embedding_model,
                 )
-                if self._legal_knowledge is not None
-                else []
-            )
+                for chunk in stored_chunks
+            ],
+            embedding_gateway=self._embedding_gateway,
+            legal_knowledge=self._legal_knowledge,
+            case_law_knowledge=self._case_law_knowledge,
+        )
+        try:
+            gateway_arguments = {
+                "thread_id": submission.run_id,
+                "history": history,
+                "retrieval": retrieval,
+            }
+            if on_text_delta is None:
+                generated = await self._gateway.converse(turn, **gateway_arguments)
+            else:
+                emitted_delta = False
+
+                def emit_delta(delta: str) -> None:
+                    nonlocal emitted_delta
+                    emitted_delta = True
+                    on_text_delta(delta)
+
+                generated = await self._gateway.converse_stream(
+                    turn,
+                    on_text_delta=emit_delta,
+                    **gateway_arguments,
+                )
+            content = generated.content.strip()
+            if not content:
+                raise RuntimeError("conversation provider returned an empty response")
+            if on_text_delta is not None and not emitted_delta:
+                on_text_delta(content)
             legal_citations = [
                 LegalCitation(
                     reference=chunk.reference,
@@ -178,31 +323,15 @@ class PersistentLegalConversationService:
                     source_url=chunk.source_url,
                     status=chunk.status,
                 )
-                for chunk in legal_chunks
+                for chunk in retrieval.legal_authorities.values()
             ]
-            case_law_chunks = (
-                await self._case_law_knowledge.search(
-                    " ".join(
-                        part
-                        for part in (
-                            case.title,
-                            case.profile.retrieval_text(),
-                            request.message,
-                        )
-                        if part
-                    ),
-                    query_embedding=query_embedding,
-                    embedding_model=embedding_model,
-                )
-                if self._case_law_knowledge is not None
-                else []
-            )
             case_law_citations: list[CaseLawCitation] = []
-            cited_case_sources: set[UUID] = set()
-            for chunk in case_law_chunks:
-                if chunk.source_id in cited_case_sources:
+            cited_case_sources: set[tuple[str, str]] = set()
+            for chunk in retrieval.case_law_authorities.values():
+                source_key = (chunk.case_number, chunk.source_url)
+                if source_key in cited_case_sources:
                     continue
-                cited_case_sources.add(chunk.source_id)
+                cited_case_sources.add(source_key)
                 case_law_citations.append(
                     CaseLawCitation(
                         reference=chunk.reference,
@@ -214,52 +343,6 @@ class PersistentLegalConversationService:
                         published_on=chunk.published_on,
                     )
                 )
-            generated = await self._gateway.converse(
-                turn,
-                thread_id=submission.run_id,
-                history=history,
-                evidence=tuple(
-                    ConversationEvidenceChunk(
-                        reference=chunk.reference,
-                        material_id=chunk.material_id,
-                        title=chunk.title,
-                        kind=chunk.kind,
-                        source_note=chunk.source_note,
-                        content=chunk.content,
-                    )
-                    for chunk in retrieved_chunks
-                ),
-                legal_authorities=tuple(
-                    ConversationLegalChunk(
-                        reference=chunk.reference,
-                        title=chunk.title,
-                        article_label=chunk.article_label,
-                        issuing_authority=chunk.issuing_authority,
-                        source_url=chunk.source_url,
-                        status=chunk.status.value,
-                        content=chunk.content,
-                    )
-                    for chunk in legal_chunks
-                ),
-                case_law_authorities=tuple(
-                    ConversationCaseLawChunk(
-                        reference=chunk.reference,
-                        case_number=chunk.case_number,
-                        title=chunk.title,
-                        section_label=chunk.section_label,
-                        issuing_authority=chunk.issuing_authority,
-                        source_url=chunk.source_url,
-                        published_on=(
-                            chunk.published_on.isoformat() if chunk.published_on else None
-                        ),
-                        content=chunk.content,
-                    )
-                    for chunk in case_law_chunks
-                ),
-            )
-            content = generated.content.strip()
-            if not content:
-                raise RuntimeError("conversation provider returned an empty response")
             completed = await self._mark_completed(
                 run_id=submission.run_id,
                 thread_id=thread.id,

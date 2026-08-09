@@ -21,6 +21,7 @@ from agent_platform.core import (
     UserContext,
 )
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lexora_ai.db.models import (
@@ -135,15 +136,26 @@ class ConversationThreadRepository:
             )
         )
         if row is None:
-            row = ConversationThreadRow(
-                owner_id=context.user_id,
-                case_id=case_id,
-                is_primary=False,
-                title=title,
-                status=ConversationThreadStatus.active.value,
-            )
-            self.session.add(row)
-            await self.session.flush()
+            try:
+                async with self.session.begin_nested():
+                    row = ConversationThreadRow(
+                        owner_id=context.user_id,
+                        case_id=case_id,
+                        is_primary=False,
+                        title=title,
+                        status=ConversationThreadStatus.active.value,
+                    )
+                    self.session.add(row)
+                    await self.session.flush()
+            except IntegrityError:
+                row = await self.session.scalar(
+                    select(ConversationThreadRow).where(
+                        ConversationThreadRow.owner_id == context.user_id,
+                        ConversationThreadRow.case_id == case_id,
+                    )
+                )
+                if row is None:
+                    raise
             await self.session.refresh(row)
         return thread_from_row(row)
 

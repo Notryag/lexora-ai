@@ -52,14 +52,15 @@ it does not import Dayboard application modules or tables.
 
 ## Retrieval Evolution
 
-For a conversation turn, Lexora ranks persisted case-material chunks lexically and semantically,
-fuses the rankings, and injects only selected chunks into model context. It separately searches
-reviewed statutes using exact article matching, lexical ranking, optional vector ranking, and
-reciprocal-rank fusion. It also searches approved official guiding cases behind a distinct
-provenance-aware port. Statute chunks preserve their `编/章/节/条` hierarchy; case-law chunks preserve
-named decision sections. Without an embedding configuration all paths retain deterministic lexical
-retrieval. A structured full-case analysis still receives all submitted material chunks because
-completeness, rather than question-specific recall, is its contract.
+For a conversation turn, the Agent receives three Lexora-owned tools: case-material search, verified
+statute search, and reviewed guiding-case search. It decides whether and which tools are needed from
+the user's intent; greetings and other non-legal turns do not automatically run retrieval. Tool
+closures inject the trusted case and user context, while the model supplies only a query. Selected
+tools rank persisted chunks lexically and semantically and fuse their rankings. Statute chunks
+preserve their `编/章/节/条` hierarchy; case-law chunks preserve named decision sections. Without an
+embedding configuration all paths retain deterministic lexical retrieval. A structured full-case
+analysis still receives all submitted material chunks because completeness, rather than
+question-specific recall, is its contract.
 
 Vectors use PostgreSQL's native dimension-flexible `vector` type. The personal-case limit makes an
 exact in-application scan deterministic and sufficient for now; an approximate database index is
@@ -104,11 +105,18 @@ state, but conflicts and uncertain interpretations must be surfaced for user con
 
 ## Conversation Experience Contract
 
-The primary workflow is chat-first. Each turn receives recent persisted messages, the current case
-profile, retrieved private evidence, and separately retrieved verified legal authorities. The model
-must reuse already supplied facts, avoid repeated questions, and ask at most three prioritized
-clarification questions when a missing fact materially changes the analysis. Once context is
-sufficient, it should answer the user's immediate question before expanding into structured analysis.
+The primary workflow is chat-first. Each turn receives recent persisted messages and the current case
+profile, then the Agent may retrieve private evidence, verified legal authorities, or reviewed cases
+through separate tools. The model must reuse already supplied facts, avoid repeated questions, and ask
+at most three prioritized clarification questions when a missing fact materially changes the analysis.
+Once context is sufficient, it should answer the user's immediate question before expanding into
+structured analysis.
+
+The browser submits one streaming HTTP request per turn. North `messages` events become incremental
+assistant text; the final `values` event completes the Run without replaying that text. The user
+message is persisted once at submission and the assistant message once at successful completion.
+The browser does not poll the Run or refetch messages while text is streaming; it refreshes durable
+state once after completion.
 
 ## Dependency Rules
 

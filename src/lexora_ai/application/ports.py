@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
@@ -63,6 +64,18 @@ class ConversationCaseLawChunk:
     content: str
 
 
+class ConversationRetrievalPort(Protocol):
+    async def search_materials(self, query: str) -> tuple[ConversationEvidenceChunk, ...]: ...
+
+    async def search_legal_authorities(
+        self, query: str
+    ) -> tuple[ConversationLegalChunk, ...]: ...
+
+    async def search_case_law(
+        self, query: str
+    ) -> tuple[ConversationCaseLawChunk, ...]: ...
+
+
 class CaseAnalysisGateway(Protocol):
     async def analyze(
         self,
@@ -82,6 +95,20 @@ class LegalConversationGateway(Protocol):
         evidence: tuple[ConversationEvidenceChunk, ...] | None = None,
         legal_authorities: tuple[ConversationLegalChunk, ...] = (),
         case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
+        retrieval: ConversationRetrievalPort | None = None,
+    ) -> GeneratedConversationTurn: ...
+
+    async def converse_stream(
+        self,
+        request: ConversationTurnRequest,
+        *,
+        thread_id: UUID,
+        on_text_delta: Callable[[str], None],
+        history: tuple[ConversationContextMessage, ...] = (),
+        evidence: tuple[ConversationEvidenceChunk, ...] | None = None,
+        legal_authorities: tuple[ConversationLegalChunk, ...] = (),
+        case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
+        retrieval: ConversationRetrievalPort | None = None,
     ) -> GeneratedConversationTurn: ...
 
 

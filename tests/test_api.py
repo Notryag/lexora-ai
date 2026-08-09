@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 from fastapi.testclient import TestClient
@@ -8,6 +9,7 @@ from lexora_ai.api.app import create_app
 from lexora_ai.api.dependencies import (
     get_analyze_case_service,
     get_legal_conversation_service,
+    get_persistent_conversation_service,
 )
 from lexora_ai.application import (
     AnalyzeCaseService,
@@ -15,7 +17,11 @@ from lexora_ai.application import (
     GeneratedConversationTurn,
     LegalConversationService,
 )
-from lexora_ai.domain import CaseAnalysisRequest, ConversationTurnRequest
+from lexora_ai.domain import (
+    CaseAnalysisRequest,
+    CaseConversationTurnResult,
+    ConversationTurnRequest,
+)
 from lexora_ai.infrastructure import ModelNotConfiguredError
 
 
@@ -54,6 +60,20 @@ class UnconfiguredGateway:
         raise ModelNotConfiguredError("OPENAI_API_KEY is not configured")
 
 
+class FakePersistentConversationService:
+    async def execute(self, case_id, request, *, on_text_delta=None):
+        if on_text_delta is not None:
+            on_text_delta("你")
+            on_text_delta("好")
+        return CaseConversationTurnResult(
+            case_id=case_id,
+            thread_id=UUID("018f6f7c-3500-7c4a-83e7-64dd8aa83293"),
+            run_id=UUID("018f6f7c-3500-7c4a-83e7-64dd8aa83294"),
+            assistant_message=f"你好，已收到：{request.message}",
+            material_count=0,
+        )
+
+
 def build_client() -> TestClient:
     app = create_app()
     gateway = FakeGateway()
@@ -69,6 +89,27 @@ def test_health() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "service": "lexora-ai", "version": "0.1.0"}
+
+
+def test_case_conversation_stream_returns_deltas_and_completion() -> None:
+    app = create_app()
+    app.dependency_overrides[get_persistent_conversation_service] = (
+        FakePersistentConversationService
+    )
+    case_id = "018f6f7c-3500-7c4a-83e7-64dd8aa83291"
+
+    response = TestClient(app).post(
+        f"/api/v1/cases/{case_id}/messages/stream",
+        json={"message": "hi"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert events[0] == {"type": "delta", "delta": "你"}
+    assert events[1] == {"type": "delta", "delta": "好"}
+    assert events[2]["type"] == "complete"
+    assert events[2]["result"]["assistant_message"] == "你好，已收到：hi"
 
 
 def test_create_analysis() -> None:

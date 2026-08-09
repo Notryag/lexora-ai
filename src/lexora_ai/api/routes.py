@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
+from contextlib import suppress
 from typing import Annotated
 from uuid import UUID
 
 from agent_platform.core import ActiveThreadRunError
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
+from starlette.responses import StreamingResponse
 
 from lexora_ai.application import (
     ActiveCaseRunNotFoundError,
@@ -55,6 +60,8 @@ from .dependencies import (
     get_legal_source_service,
     get_persistent_conversation_service,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -364,6 +371,75 @@ async def create_case_conversation_turn(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except RunCancelledError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/cases/{case_id}/messages/stream",
+    tags=["case conversations"],
+    response_class=StreamingResponse,
+)
+async def stream_case_conversation_turn(
+    case_id: UUID,
+    request: CaseConversationTurnRequest,
+    service: Annotated[
+        PersistentLegalConversationService,
+        Depends(get_persistent_conversation_service),
+    ],
+) -> StreamingResponse:
+    async def event_stream():
+        queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+
+        def publish_delta(delta: str) -> None:
+            queue.put_nowait(("delta", delta))
+
+        async def execute() -> None:
+            try:
+                result = await service.execute(
+                    case_id,
+                    request,
+                    on_text_delta=publish_delta,
+                )
+                await queue.put(("complete", result))
+            except RunCancelledError:
+                await queue.put(("error", "分析已取消。"))
+            except (CaseNotFoundError, ModelNotConfiguredError, ActiveThreadRunError) as exc:
+                await queue.put(("error", str(exc)))
+            except Exception:
+                logger.exception("Case conversation stream failed", extra={"case_id": str(case_id)})
+                await queue.put(("error", "分析失败，请稍后重试。"))
+            finally:
+                await queue.put(("end", None))
+
+        task = asyncio.create_task(execute())
+        try:
+            while True:
+                event_type, payload = await queue.get()
+                if event_type == "end":
+                    break
+                if event_type == "complete":
+                    data = {
+                        "type": "complete",
+                        "result": payload.model_dump(mode="json"),
+                    }
+                elif event_type == "delta":
+                    data = {"type": "delta", "delta": payload}
+                else:
+                    data = {"type": "error", "message": payload}
+                yield json.dumps(data, ensure_ascii=False, separators=(",", ":")) + "\n"
+        finally:
+            if not task.done():
+                task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="application/x-ndjson",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get(

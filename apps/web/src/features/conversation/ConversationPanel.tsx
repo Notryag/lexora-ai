@@ -186,7 +186,7 @@ export function ConversationPanel({
             </article>
           ))}
 
-          {isSubmitting ? (
+          {isSubmitting && messages.at(-1)?.role !== "assistant" ? (
             <article className={`${styles.message} ${styles.assistant}`} aria-label="正在分析">
               <div className={styles.assistantMark} aria-hidden="true">析</div>
               <div className={styles.thinking}>

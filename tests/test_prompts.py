@@ -52,6 +52,22 @@ def test_conversation_prompt_does_not_claim_external_retrieval() -> None:
     assert "信息已经足够，先直接回答用户当前问题" in LEXORA_SYSTEM_PROMPT
 
 
+def test_conversation_prompt_delegates_retrieval_choice_to_agent() -> None:
+    request = ConversationTurnRequest(
+        message="hi",
+        materials=[CaseMaterial(title="合同", content="劳动合同正文")],
+    )
+
+    prompt = build_conversation_prompt(request, retrieval_available=True)
+    payload = json.loads(
+        prompt.split("<case_data>", maxsplit=1)[1].removesuffix("</case_data>")
+    )
+
+    assert "按需自主调用" in prompt
+    assert "纯寒暄" in prompt
+    assert payload["retrieved_material_chunks"] == []
+
+
 def test_conversation_prompt_includes_user_confirmed_case_profile() -> None:
     request = ConversationTurnRequest(
         message="我可以要求什么？",

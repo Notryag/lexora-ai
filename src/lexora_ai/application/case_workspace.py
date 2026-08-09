@@ -47,6 +47,11 @@ class CaseWorkspaceService:
         async with self._session_factory() as session:
             unit_of_work = LexoraUnitOfWork(session)
             result = await unit_of_work.cases.create(self._context, request)
+            await unit_of_work.threads.get_or_create_for_case(
+                self._context,
+                case_id=result.id,
+                title=result.title,
+            )
             await unit_of_work.commit()
             return result
 

@@ -58,7 +58,12 @@ class RecordingGateway:
         evidence: tuple[ConversationEvidenceChunk, ...] | None = None,
         legal_authorities: tuple[ConversationLegalChunk, ...] = (),
         case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
+        retrieval=None,
     ) -> GeneratedConversationTurn:
+        if retrieval is not None:
+            evidence = await retrieval.search_materials(request.message)
+            legal_authorities = await retrieval.search_legal_authorities(request.message)
+            case_law_authorities = await retrieval.search_case_law(request.message)
         assert evidence is not None
         self.requests.append(request)
         self.histories.append(history)
@@ -69,6 +74,31 @@ class RecordingGateway:
             content=f"已记录：{request.message} [M1:C1]",
             runtime_thread_id=str(thread_id),
         )
+
+    async def converse_stream(
+        self,
+        request: ConversationTurnRequest,
+        *,
+        thread_id,
+        on_text_delta,
+        history: tuple[ConversationContextMessage, ...] = (),
+        evidence: tuple[ConversationEvidenceChunk, ...] | None = None,
+        legal_authorities: tuple[ConversationLegalChunk, ...] = (),
+        case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
+        retrieval=None,
+    ) -> GeneratedConversationTurn:
+        result = await self.converse(
+            request,
+            thread_id=thread_id,
+            history=history,
+            evidence=evidence,
+            legal_authorities=legal_authorities,
+            case_law_authorities=case_law_authorities,
+            retrieval=retrieval,
+        )
+        on_text_delta("已记录：")
+        on_text_delta(f"{request.message} [M1:C1]")
+        return result
 
 
 class SemanticEmbeddingGateway:
@@ -83,6 +113,29 @@ class SemanticEmbeddingGateway:
     async def embed_query(self, text: str) -> tuple[float, ...]:
         assert "薪资" in text
         return (1.0, 0.0)
+
+
+class NeverCalledEmbeddingGateway:
+    model_name = "never-called"
+
+    async def embed_documents(self, texts):
+        raise AssertionError("embedding must be agent-triggered")
+
+    async def embed_query(self, text):
+        raise AssertionError("embedding must be agent-triggered")
+
+
+class PassiveGateway:
+    def __init__(self) -> None:
+        self.retrieval = None
+
+    async def converse(self, request, *, thread_id, retrieval=None, **kwargs):
+        del request, kwargs
+        self.retrieval = retrieval
+        return GeneratedConversationTurn(
+            content="你好，请描述你希望分析的具体情况。",
+            runtime_thread_id=str(thread_id),
+        )
 
 
 @pytest.fixture
@@ -143,6 +196,35 @@ async def test_persisted_case_material_and_conversation_round_trip(session_facto
     assert gateway.histories[1][0].content == "公司拖欠工资怎么办？"
     assert [chunk.reference for chunk in gateway.evidence[0]] == ["M1:C1"]
     assert gateway.requests[0].case_profile == case.profile
+
+
+@pytest.mark.asyncio
+async def test_retrieval_runs_only_when_agent_calls_a_tool(session_factory) -> None:
+    context = UserContext(
+        user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        timezone="Asia/Shanghai",
+        locale="zh-CN",
+    )
+    workspace = CaseWorkspaceService(session_factory, context, parse_material_file)
+    gateway = PassiveGateway()
+    conversation = PersistentLegalConversationService(
+        session_factory,
+        context,
+        gateway,
+        NeverCalledEmbeddingGateway(),
+    )
+    case = await workspace.create_case(LegalCaseCreate(title="未命名案件"))
+
+    result = await conversation.execute(
+        case.id,
+        CaseConversationTurnRequest(message="hi"),
+    )
+    messages = await conversation.list_messages(case.id)
+
+    assert gateway.retrieval is not None
+    assert result.assistant_message == "你好，请描述你希望分析的具体情况。"
+    assert [message.role for message in messages] == ["user", "assistant"]
+    assert messages[0].run_id == messages[1].run_id == result.run_id
 
 
 @pytest.mark.asyncio

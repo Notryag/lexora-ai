@@ -14,12 +14,11 @@ import {
   createCase,
   deleteMaterial,
   cancelCaseRun,
-  getCaseRun,
   listCases,
   listMaterials,
   listMessages,
   normalizeCaseProfile,
-  sendCaseMessage,
+  streamCaseMessage,
   updateCase,
   updateCaseProfile,
   uploadMaterial,
@@ -39,6 +38,7 @@ export function LexoraWorkspace() {
   const [draftMode, setDraftMode] = useState(false);
   const [caseTitle, setCaseTitle] = useState("");
   const [pendingUserMessage, setPendingUserMessage] = useState<ChatMessage | null>(null);
+  const [pendingAssistantMessage, setPendingAssistantMessage] = useState<ChatMessage | null>(null);
   const [materialPanelOpen, setMaterialPanelOpen] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const conversationCaseIdRef = useRef<string | null>(null);
@@ -80,33 +80,48 @@ export function LexoraWorkspace() {
       conversationCaseIdRef.current = caseId;
       const controller = new AbortController();
       conversationAbortRef.current = controller;
-      return sendCaseMessage(caseId, message, controller.signal);
+      return streamCaseMessage(
+        caseId,
+        message,
+        (delta) => {
+          setPendingAssistantMessage((current) => ({
+            id: current?.id ?? crypto.randomUUID(),
+            role: "assistant",
+            text: `${current?.text ?? ""}${delta}`,
+          }));
+        },
+        controller.signal,
+      );
+    },
+    onSuccess: (result) => {
+      setPendingAssistantMessage((current) => ({
+        id: current?.id ?? crypto.randomUUID(),
+        role: "assistant",
+        text: result.assistant_message,
+        legalCitations: result.legal_citations,
+        caseLawCitations: result.case_law_citations,
+      }));
     },
     onSettled: async (result) => {
       const caseId = result?.case_id ?? conversationCaseIdRef.current;
-      if (caseId) {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ["case-messages", caseId] }),
-          queryClient.invalidateQueries({ queryKey: ["cases"] }),
-        ]);
+      try {
+        if (caseId) {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["case-messages", caseId] }),
+            queryClient.invalidateQueries({ queryKey: ["cases"] }),
+          ]);
+        }
+      } finally {
+        conversationCaseIdRef.current = null;
+        conversationAbortRef.current = null;
+        setPendingUserMessage(null);
+        setPendingAssistantMessage(null);
       }
-      conversationCaseIdRef.current = null;
-      conversationAbortRef.current = null;
-      setPendingUserMessage(null);
     },
   });
 
-  const runQuery = useQuery({
-    queryKey: ["case-run", activeCaseId],
-    queryFn: () => getCaseRun(activeCaseId as string),
-    enabled: activeCaseId !== null,
-    refetchInterval: conversation.isPending ? 1_000 : false,
-  });
   const cancelMutation = useMutation({
     mutationFn: () => cancelCaseRun(activeCaseId as string),
-    onSuccess: (run) => {
-      queryClient.setQueryData(["case-run", activeCaseId], run);
-    },
   });
 
   const titleMutation = useMutation({
@@ -141,9 +156,16 @@ export function LexoraWorkspace() {
       legalCitations: message.legal_citations,
       caseLawCitations: message.case_law_citations,
     }));
-    const withPending = pendingUserMessage ? [...mapped, pendingUserMessage] : mapped;
+    const pendingUserPersisted = pendingUserMessage
+      && mapped.some((message) => message.role === "user" && message.text === pendingUserMessage.text);
+    const withUser = pendingUserMessage && !pendingUserPersisted
+      ? [...mapped, pendingUserMessage]
+      : mapped;
+    const withPending = pendingAssistantMessage
+      ? [...withUser, pendingAssistantMessage]
+      : withUser;
     return withPending.length ? withPending : [welcomeMessage];
-  }, [messagesQuery.data, pendingUserMessage]);
+  }, [messagesQuery.data, pendingAssistantMessage, pendingUserMessage]);
 
   async function persistMaterial(material: CaseMaterial) {
     const caseId = await ensureCase();
@@ -175,6 +197,7 @@ export function LexoraWorkspace() {
   function sendMessage(message: string) {
     if (conversation.isPending) return;
     setPendingUserMessage({ id: crypto.randomUUID(), role: "user", text: message });
+    setPendingAssistantMessage(null);
     conversation.mutate({ message });
   }
 
@@ -209,6 +232,7 @@ export function LexoraWorkspace() {
     setDraftMode(true);
     setCaseTitle("");
     setPendingUserMessage(null);
+    setPendingAssistantMessage(null);
     setMaterialPanelOpen(false);
     setProfilePanelOpen(false);
     conversation.reset();
@@ -291,8 +315,7 @@ export function LexoraWorkspace() {
         onCancel={() => {
           if (
             activeCaseId
-            && runQuery.data
-            && ["queued", "running"].includes(runQuery.data.status)
+            && conversation.isPending
           ) {
             void cancelMutation.mutateAsync().finally(() => {
               conversationAbortRef.current?.abort();

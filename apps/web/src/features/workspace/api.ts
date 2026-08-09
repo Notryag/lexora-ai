@@ -16,6 +16,7 @@ export type CaseMaterial = components["schemas"]["CaseMaterial"];
 export type StoredCaseMaterial = components["schemas"]["StoredCaseMaterial"];
 export type PersistedMessage = components["schemas"]["CaseConversationMessage"];
 export type CaseRun = components["schemas"]["CaseRun"];
+type CaseConversationTurnResult = components["schemas"]["CaseConversationTurnResult"];
 
 function requireData<T>(data: T | undefined, error: unknown): T {
   if (data === undefined) throw new Error(apiErrorMessage(error));
@@ -117,24 +118,56 @@ export async function listMessages(caseId: string): Promise<PersistedMessage[]> 
   return requireData(data, error);
 }
 
-export async function sendCaseMessage(
+type ConversationStreamEvent =
+  | { type: "delta"; delta: string }
+  | { type: "complete"; result: CaseConversationTurnResult }
+  | { type: "error"; message: string };
+
+export async function streamCaseMessage(
   caseId: string,
   message: string,
+  onDelta: (delta: string) => void,
   signal?: AbortSignal,
-) {
-  const { data, error } = await apiClient.POST("/api/v1/cases/{case_id}/messages", {
-    params: { path: { case_id: caseId } },
-    body: { message },
+): Promise<CaseConversationTurnResult> {
+  const response = await fetch(`/api/v1/cases/${caseId}/messages/stream`, {
+    method: "POST",
+    headers: {
+      Accept: "application/x-ndjson",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ message }),
     signal,
   });
-  return requireData(data, error);
-}
+  if (!response.ok) {
+    const payload: unknown = await response.json();
+    throw new Error(apiErrorMessage(payload));
+  }
+  if (!response.body) throw new Error("浏览器未能建立流式响应。请稍后重试。");
 
-export async function getCaseRun(caseId: string): Promise<CaseRun | null> {
-  const { data, error } = await apiClient.GET("/api/v1/cases/{case_id}/run", {
-    params: { path: { case_id: caseId } },
-  });
-  return requireData(data, error);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: CaseConversationTurnResult | null = null;
+
+  function consumeLine(line: string) {
+    if (!line.trim()) return;
+    const event = JSON.parse(line) as ConversationStreamEvent;
+    if (event.type === "delta") onDelta(event.delta);
+    if (event.type === "complete") result = event.result;
+    if (event.type === "error") throw new Error(event.message);
+  }
+
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    lines.forEach(consumeLine);
+    if (done) break;
+  }
+  consumeLine(buffer);
+  if (!result) throw new Error("分析响应提前结束，请重试。");
+  return result;
 }
 
 export async function cancelCaseRun(caseId: string): Promise<CaseRun> {

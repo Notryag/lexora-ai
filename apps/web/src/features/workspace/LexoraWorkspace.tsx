@@ -46,6 +46,7 @@ export function LexoraWorkspace() {
   const [pendingAssistantMessage, setPendingAssistantMessage] = useState<ChatMessage | null>(null);
   const [materialPanelOpen, setMaterialPanelOpen] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
+  const [profileUpdated, setProfileUpdated] = useState(false);
   const conversationCaseIdRef = useRef<string | null>(null);
   const conversationAbortRef = useRef<AbortController | null>(null);
 
@@ -106,6 +107,14 @@ export function LexoraWorkspace() {
         legalCitations: result.legal_citations,
         caseLawCitations: result.case_law_citations,
       }));
+      setProfileUpdated(Boolean(result.profile_updated));
+      if (result.profile_updated && result.case_profile) {
+        queryClient.setQueryData(["cases"], (current: typeof casesQuery.data) =>
+          (current ?? []).map((item) => item.id === result.case_id
+            ? { ...item, profile: result.case_profile }
+            : item),
+        );
+      }
     },
     onSettled: async (result) => {
       const caseId = result?.case_id ?? conversationCaseIdRef.current;
@@ -203,6 +212,7 @@ export function LexoraWorkspace() {
     if (conversation.isPending) return;
     setPendingUserMessage({ id: crypto.randomUUID(), role: "user", text: message });
     setPendingAssistantMessage(null);
+    setProfileUpdated(false);
     conversation.mutate({ message });
   }
 
@@ -246,6 +256,7 @@ export function LexoraWorkspace() {
     setPendingAssistantMessage(null);
     setMaterialPanelOpen(false);
     setProfilePanelOpen(false);
+    setProfileUpdated(false);
     conversation.reset();
   }
 
@@ -288,6 +299,8 @@ export function LexoraWorkspace() {
                 setCaseTitle(item.title);
                 setDraftMode(false);
                 setPendingUserMessage(null);
+                setPendingAssistantMessage(null);
+                setProfileUpdated(false);
                 conversation.reset();
                 setProfilePanelOpen(false);
               }}
@@ -319,6 +332,7 @@ export function LexoraWorkspace() {
         isSubmitting={conversation.isPending}
         materialCount={materials.length}
         profileItemCount={profileItemCount}
+        profileUpdated={profileUpdated}
         messages={messages}
         onCaseTitleChange={setCaseTitle}
         onCaseTitleCommit={() => void titleMutation.mutate()}

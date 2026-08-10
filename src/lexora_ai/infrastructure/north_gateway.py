@@ -18,6 +18,7 @@ from north.runtime import RunManager
 
 from lexora_ai.application import (
     ConversationCaseLawChunk,
+    ConversationCaseMemoryPort,
     ConversationContextMessage,
     ConversationEvidenceChunk,
     ConversationLegalChunk,
@@ -27,7 +28,7 @@ from lexora_ai.application import (
 )
 from lexora_ai.config import Settings
 from lexora_ai.domain import CaseAnalysisRequest, ConversationTurnRequest
-from lexora_ai.infrastructure.north_tools import build_legal_retrieval_tools
+from lexora_ai.infrastructure.north_tools import build_lexora_tools
 from lexora_ai.prompts import (
     LEXORA_SYSTEM_PROMPT,
     build_case_analysis_prompt,
@@ -71,6 +72,7 @@ class NorthCaseAnalysisGateway:
         legal_authorities: tuple[ConversationLegalChunk, ...] = (),
         case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
         retrieval: ConversationRetrievalPort | None = None,
+        case_memory: ConversationCaseMemoryPort | None = None,
     ) -> GeneratedConversationTurn:
         return await self._run_conversation(
             request,
@@ -81,6 +83,7 @@ class NorthCaseAnalysisGateway:
             legal_authorities=legal_authorities,
             case_law_authorities=case_law_authorities,
             retrieval=retrieval,
+            case_memory=case_memory,
         )
 
     async def converse_stream(
@@ -94,6 +97,7 @@ class NorthCaseAnalysisGateway:
         legal_authorities: tuple[ConversationLegalChunk, ...] = (),
         case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
         retrieval: ConversationRetrievalPort | None = None,
+        case_memory: ConversationCaseMemoryPort | None = None,
     ) -> GeneratedConversationTurn:
         return await self._run_conversation(
             request,
@@ -104,6 +108,7 @@ class NorthCaseAnalysisGateway:
             legal_authorities=legal_authorities,
             case_law_authorities=case_law_authorities,
             retrieval=retrieval,
+            case_memory=case_memory,
         )
 
     async def _run_conversation(
@@ -117,6 +122,7 @@ class NorthCaseAnalysisGateway:
         legal_authorities: tuple[ConversationLegalChunk, ...],
         case_law_authorities: tuple[ConversationCaseLawChunk, ...],
         retrieval: ConversationRetrievalPort | None,
+        case_memory: ConversationCaseMemoryPort | None,
     ) -> GeneratedConversationTurn:
         prompt = build_conversation_prompt(
             request,
@@ -125,6 +131,7 @@ class NorthCaseAnalysisGateway:
             legal_authorities=legal_authorities,
             case_law_authorities=case_law_authorities,
             retrieval_available=retrieval is not None,
+            case_memory_available=case_memory is not None,
         )
         run_id = str(thread_id)
         manager = RunManager()
@@ -141,7 +148,7 @@ class NorthCaseAnalysisGateway:
             record,
             agent_factory=lambda: build_agent(
                 self._get_config(),
-                tools=build_legal_retrieval_tools(retrieval),
+                tools=build_lexora_tools(retrieval, case_memory),
             ),
             graph_input={"messages": [HumanMessage(content=prompt)]},
             config={

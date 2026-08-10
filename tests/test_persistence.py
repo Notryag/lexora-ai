@@ -27,6 +27,8 @@ from lexora_ai.domain import (
     CaseConversationTurnRequest,
     CaseLawSourceCreate,
     CaseMaterial,
+    CaseProfile,
+    CaseProfilePatch,
     CaseProfileUpdate,
     ConversationTurnRequest,
     LegalCaseCreate,
@@ -59,6 +61,7 @@ class RecordingGateway:
         legal_authorities: tuple[ConversationLegalChunk, ...] = (),
         case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
         retrieval=None,
+        case_memory=None,
     ) -> GeneratedConversationTurn:
         if retrieval is not None:
             evidence = await retrieval.search_materials(request.message)
@@ -92,6 +95,7 @@ class RecordingGateway:
         legal_authorities: tuple[ConversationLegalChunk, ...] = (),
         case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
         retrieval=None,
+        case_memory=None,
     ) -> GeneratedConversationTurn:
         result = await self.converse(
             request,
@@ -101,6 +105,7 @@ class RecordingGateway:
             legal_authorities=legal_authorities,
             case_law_authorities=case_law_authorities,
             retrieval=retrieval,
+            case_memory=case_memory,
         )
         on_text_delta("已记录：")
         on_text_delta(f"{request.message} [M1:C1]")
@@ -140,6 +145,29 @@ class PassiveGateway:
         self.retrieval = retrieval
         return GeneratedConversationTurn(
             content="你好，请描述你希望分析的具体情况。",
+            runtime_thread_id=str(thread_id),
+        )
+
+
+class ProfileUpdatingGateway:
+    def __init__(self, *, fail_after_update: bool = False) -> None:
+        self.fail_after_update = fail_after_update
+
+    async def converse(self, request, *, thread_id, case_memory=None, **kwargs):
+        del request, kwargs
+        assert case_memory is not None
+        await case_memory.update_profile(
+            CaseProfilePatch(
+                case_type="离婚财产分割",
+                parties=["用户（妻子）", "配偶（丈夫）"],
+                key_facts=["房屋在婚后购买", "房屋登记在双方名下"],
+                resolved_missing_information=["房屋购买时间"],
+            )
+        )
+        if self.fail_after_update:
+            raise RuntimeError("model failed after staging profile")
+        return GeneratedConversationTurn(
+            content="已记录房屋情况，请继续补充贷款信息。",
             runtime_thread_id=str(thread_id),
         )
 
@@ -231,6 +259,68 @@ async def test_retrieval_runs_only_when_agent_calls_a_tool(session_factory) -> N
     assert result.assistant_message == "你好，请描述你希望分析的具体情况。"
     assert [message.role for message in messages] == ["user", "assistant"]
     assert messages[0].run_id == messages[1].run_id == result.run_id
+
+
+@pytest.mark.asyncio
+async def test_agent_profile_updates_are_merged_after_successful_run(session_factory) -> None:
+    context = UserContext(
+        user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        timezone="Asia/Shanghai",
+        locale="zh-CN",
+    )
+    workspace = CaseWorkspaceService(session_factory, context, parse_material_file)
+    case = await workspace.create_case(LegalCaseCreate(title="离婚房产争议"))
+    await workspace.update_profile(
+        case.id,
+        CaseProfileUpdate(missing_information=["房屋购买时间"]),
+    )
+    conversation = PersistentLegalConversationService(
+        session_factory,
+        context,
+        ProfileUpdatingGateway(),
+    )
+
+    first = await conversation.execute(
+        case.id,
+        CaseConversationTurnRequest(message="房子婚后买的，登记在我和丈夫名下。"),
+    )
+    second = await conversation.execute(
+        case.id,
+        CaseConversationTurnRequest(message="房子婚后买的，登记在我和丈夫名下。"),
+    )
+    saved = await workspace.get_case(case.id)
+
+    assert first.profile_updated is True
+    assert first.case_profile.case_type == "离婚财产分割"
+    assert first.case_profile.missing_information == []
+    assert second.profile_updated is False
+    assert saved.profile.parties == ["用户（妻子）", "配偶（丈夫）"]
+    assert saved.profile.key_facts == ["房屋在婚后购买", "房屋登记在双方名下"]
+
+
+@pytest.mark.asyncio
+async def test_staged_profile_update_is_discarded_when_run_fails(session_factory) -> None:
+    context = UserContext(
+        user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        timezone="Asia/Shanghai",
+        locale="zh-CN",
+    )
+    workspace = CaseWorkspaceService(session_factory, context, parse_material_file)
+    case = await workspace.create_case(LegalCaseCreate(title="失败运行"))
+    conversation = PersistentLegalConversationService(
+        session_factory,
+        context,
+        ProfileUpdatingGateway(fail_after_update=True),
+    )
+
+    with pytest.raises(RuntimeError, match="model failed"):
+        await conversation.execute(
+            case.id,
+            CaseConversationTurnRequest(message="房子婚后购买。"),
+        )
+
+    saved = await workspace.get_case(case.id)
+    assert saved.profile == CaseProfile()
 
 
 @pytest.mark.asyncio

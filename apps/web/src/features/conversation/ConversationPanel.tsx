@@ -4,6 +4,7 @@ import {
   BookOpenCheck,
   BookOpenText,
   ClipboardList,
+  CircleCheck,
   Download,
   ExternalLink,
   Scale,
@@ -28,6 +29,7 @@ type ConversationPanelProps = {
   isCancelling: boolean;
   materialCount: number;
   profileItemCount: number;
+  profileUpdated: boolean;
   messages: ChatMessage[];
   onCaseTitleChange: (value: string) => void;
   onCaseTitleCommit: () => void;
@@ -45,6 +47,7 @@ export function ConversationPanel({
   isCancelling,
   materialCount,
   profileItemCount,
+  profileUpdated,
   messages,
   onCaseTitleChange,
   onCaseTitleCommit,
@@ -104,9 +107,17 @@ export function ConversationPanel({
             <Download aria-hidden="true" size={18} />
             <span>导出</span>
           </button>
-          <button className={styles.profileButton} onClick={onOpenProfile} type="button">
-            <ClipboardList aria-hidden="true" size={18} />
-            <span>档案 {profileItemCount}</span>
+          <button
+            aria-label={profileUpdated ? `档案 ${profileItemCount}，已更新` : undefined}
+            className={`${styles.profileButton} ${profileUpdated ? styles.profileButtonUpdated : ""}`}
+            onClick={onOpenProfile}
+            title={profileUpdated ? "案件档案已更新" : "案件档案"}
+            type="button"
+          >
+            {profileUpdated
+              ? <CircleCheck aria-hidden="true" size={18} />
+              : <ClipboardList aria-hidden="true" size={18} />}
+            <span>档案 {profileItemCount}{profileUpdated ? " · 已更新" : ""}</span>
           </button>
           <button className={styles.materialButton} onClick={onOpenMaterials} type="button">
             <BookOpenText aria-hidden="true" size={18} />

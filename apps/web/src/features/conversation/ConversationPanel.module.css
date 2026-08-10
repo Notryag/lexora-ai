@@ -60,6 +60,11 @@
   display: inline-flex;
 }
 
+.profileButtonUpdated {
+  border-color: color-mix(in srgb, var(--lexora-primary), transparent 55%);
+  color: var(--lexora-primary);
+}
+
 .exportButton {
   display: inline-flex;
 }

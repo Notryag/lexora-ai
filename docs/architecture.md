@@ -94,14 +94,19 @@ outcome.
 
 ## Structured Case Profile
 
-The personal workspace now persists a user-editable `CaseProfile` on each legal case. It contains
-case type, parties, claims, key facts, disputed issues, evidence notes, and missing information.
-The profile is application-owned legal workflow data, not a `rag-core` or Agent Platform concern.
-Conversation prompts and statute queries may use it as user-confirmed context, while the system still
-labels it as unverified case data and never treats it as legal authority or proof. It is a projection
-of case state for inspection and correction, not a required form or a separate generation workflow.
-Conversation history remains the durable record. Future background extraction may update low-risk
-state, but conflicts and uncertain interpretations must be surfaced for user confirmation.
+The personal workspace persists a user-editable `CaseProfile` on each legal case. It contains case
+type, parties, claims, key facts, disputed issues, evidence notes, and missing information. The Agent
+may call a Lexora-owned `update_case_profile` tool to append concise facts explicitly stated or
+confirmed by the user and to resolve previously missing information. Tool closures retain trusted
+case context; the model never supplies a case or user identifier. Updates remain staged in memory
+until the Run completes, then commit in the same transaction as the assistant message. Failed or
+cancelled Runs leave the durable profile unchanged.
+
+The profile is application-owned legal workflow data, not a `rag-core`, North, or Agent Platform
+concern. Conversation prompts and retrieval queries may use it as user-stated context, while the
+system still labels it as unverified case data and never treats it as legal authority or proof. It is
+a projection of case state for inspection and correction, not a required form or a separate
+generation workflow. Conversation history remains the durable record.
 
 ## Conversation Experience Contract
 
@@ -151,8 +156,13 @@ the personal user to cancel queued or running analysis. A cancelled run cannot l
 by a late model response, and the browser aborts its waiting request after the server records the
 cancellation.
 
+Completed: explicit facts supplied during conversation can be staged through the Lexora case-memory
+tool and committed with a successful Run. Repeated facts are merged without duplication, resolved
+information is removed by replacing the outstanding missing-information state, and the UI surfaces
+a lightweight profile update state.
+
 1. Add update checks against primary sources while retaining human confirmation.
-2. Maintain case state incrementally during conversation and surface only conflicts for confirmation.
+2. Surface conflicting or uncertain case-state changes for explicit user confirmation.
 3. Expand case retrieval beyond the initial guiding-case slice using measured user needs and a
    source with stable official provenance.
 4. Add startup recovery and idempotent HTTP submission for interrupted requests.

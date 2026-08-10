@@ -65,7 +65,7 @@ export function CaseProfilePanel({
         <header className={styles.header}>
           <div>
             <h2>案件档案</h2>
-            <span>用户确认的信息</span>
+            <span>用户陈述与确认的信息</span>
           </div>
           <button aria-label="关闭案件档案" className={styles.iconButton} onClick={onClose} type="button">
             <X aria-hidden="true" size={20} />

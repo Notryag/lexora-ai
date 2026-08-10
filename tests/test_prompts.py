@@ -58,15 +58,24 @@ def test_conversation_prompt_delegates_retrieval_choice_to_agent() -> None:
         materials=[CaseMaterial(title="合同", content="劳动合同正文")],
     )
 
-    prompt = build_conversation_prompt(request, retrieval_available=True)
+    prompt = build_conversation_prompt(
+        request,
+        retrieval_available=True,
+        case_memory_available=True,
+    )
     payload = json.loads(
         prompt.split("<case_data>", maxsplit=1)[1].removesuffix("</case_data>")
     )
 
     assert "按需自主调用" in prompt
     assert "纯寒暄" in prompt
+    assert "update_case_profile" in prompt
+    assert "不要把推断" in prompt
+    assert "相同含义已被档案覆盖则禁止调用" in prompt
+    assert "不能因为已经写入 key_facts 就遗漏当事人" in LEXORA_SYSTEM_PROMPT
     assert "300 个中文字符以内" in LEXORA_SYSTEM_PROMPT
     assert "不要一边声称信息" in LEXORA_SYSTEM_PROMPT
+    assert "不能因为档案尚为空" in LEXORA_SYSTEM_PROMPT
     assert payload["retrieved_material_chunks"] == []
 
 

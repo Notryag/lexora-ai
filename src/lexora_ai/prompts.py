@@ -36,6 +36,17 @@ LEXORA_SYSTEM_PROMPT = """你是法析 Lexora，一名严谨的法律案例分�
 仍不足以判断，先提出不超过三个、按重要性排序的澄清问题，不要假装已经完成法律检索；若
 信息已经足够，先直接回答用户当前问题，再补充结构化分析。不要为了填满案件档案而追问与
 当前问题无关的信息。
+判断信息是否充分时必须同时使用当前 user_message，不能因为档案尚为空就声称用户没有提供
+案件事实；应准确说明当前已经知道什么、还缺什么。
+每轮回答前对照 case_profile 检查用户当前消息：只要出现档案尚未覆盖的明确案件类型、当事人、
+诉求、事实、争议、证据线索，或本轮实际要追问的关键信息，就必须调用 update_case_profile 后
+再回答。只记录用户原话能够支持的简洁事实，不记录模型推断、法律评价、检索内容或寒暄。
+同一陈述可以同时更新多个字段；用户明确提到本人、配偶、公司或其他关系人时，应在记录相关
+事实的同时把这些主体写入 parties，不能因为已经写入 key_facts 就遗漏当事人。
+需要追问时，把回答后仍未解决的问题作为完整、去重的清单写入 missing_information，用它替换
+旧清单；已经回答的问题不得保留。若只需移除且无需重写清单，也可使用
+resolved_missing_information。若信息已经被档案以相同含义记录，即使用户换了说法或强调确认，
+也不得再次添加或调用工具；不要为了填充档案而调用工具。
 如果缺少会直接影响结论的关键事实，只能先说明最必要的一般原则并追问，不要展开完整分析、
 罗列所有可能规则或使用完整报告结构。此类回复通常控制在 300 个中文字符以内，最多提出三个
 按重要性排序的问题。应明确说“目前只能说明一般原则，不能判断具体结果”，不要一边声称信息
@@ -87,6 +98,7 @@ def build_conversation_prompt(
     legal_authorities: Sequence[ConversationLegalChunk] = (),
     case_law_authorities: Sequence[ConversationCaseLawChunk] = (),
     retrieval_available: bool = False,
+    case_memory_available: bool = False,
 ) -> str:
     retrieval_query = " ".join(part for part in (request.case_title, request.message) if part)
     if evidence is not None:
@@ -163,8 +175,16 @@ def build_conversation_prompt(
         if case_law_authorities
         else "本次没有检索到可引用类案，不得声称已核验具体案例或裁判观点。"
     )
+    memory_instruction = (
+        "回答前对照 case_profile：将本轮新增的明确事实通过 update_case_profile 暂存；本轮"
+        "仍需追问时，用 missing_information 提交完整、去重且尚未回答的清单。若相同含义已"
+        "被档案覆盖则禁止调用。不要把推断、法规内容或未确认信息写入档案。"
+        if case_memory_available
+        else ""
+    )
     return (
         "请继续本案件对话。复用已有历史和案件档案，不要重复询问已经明确的信息；"
         "先判断现有事实是否足以回答，只有关键事实不足时才提出最重要的澄清问题。"
-        f"{legal_instruction}{case_law_instruction}\n<case_data>{serialized}</case_data>"
+        f"{memory_instruction}{legal_instruction}{case_law_instruction}\n"
+        f"<case_data>{serialized}</case_data>"
     )

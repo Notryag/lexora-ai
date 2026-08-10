@@ -213,6 +213,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cases/{case_id}/messages/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stream Case Conversation Turn */
+        post: operations["stream_case_conversation_turn_api_v1_cases__case_id__messages_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cases/{case_id}/run": {
         parameters: {
             query?: never;
@@ -358,6 +375,12 @@ export interface components {
             legal_citations?: components["schemas"]["LegalCitation"][];
             /** Case Law Citations */
             case_law_citations?: components["schemas"]["CaseLawCitation"][];
+            /**
+             * Profile Updated
+             * @default false
+             */
+            profile_updated: boolean;
+            case_profile?: components["schemas"]["CaseProfile"];
         };
         /** CaseLawCitation */
         CaseLawCitation: {
@@ -1201,6 +1224,39 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CaseConversationTurnResult"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_case_conversation_turn_api_v1_cases__case_id__messages_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseConversationTurnRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

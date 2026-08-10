@@ -8,6 +8,8 @@ from uuid import UUID
 from lexora_ai.domain import (
     CaseAnalysisRequest,
     CaseLawChunk,
+    CaseProfile,
+    CaseProfilePatch,
     ConversationTurnRequest,
     LegalKnowledgeChunk,
 )
@@ -76,6 +78,10 @@ class ConversationRetrievalPort(Protocol):
     ) -> tuple[ConversationCaseLawChunk, ...]: ...
 
 
+class ConversationCaseMemoryPort(Protocol):
+    async def update_profile(self, patch: CaseProfilePatch) -> CaseProfile: ...
+
+
 class CaseAnalysisGateway(Protocol):
     async def analyze(
         self,
@@ -96,6 +102,7 @@ class LegalConversationGateway(Protocol):
         legal_authorities: tuple[ConversationLegalChunk, ...] = (),
         case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
         retrieval: ConversationRetrievalPort | None = None,
+        case_memory: ConversationCaseMemoryPort | None = None,
     ) -> GeneratedConversationTurn: ...
 
     async def converse_stream(
@@ -109,6 +116,7 @@ class LegalConversationGateway(Protocol):
         legal_authorities: tuple[ConversationLegalChunk, ...] = (),
         case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
         retrieval: ConversationRetrievalPort | None = None,
+        case_memory: ConversationCaseMemoryPort | None = None,
     ) -> GeneratedConversationTurn: ...
 
 

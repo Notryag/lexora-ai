@@ -33,6 +33,9 @@ from lexora_ai.domain import (
     CaseConversationTurnResult,
     CaseLawCitation,
     CaseMaterial,
+    CaseProfile,
+    CaseProfilePatch,
+    CaseProfileUpdate,
     ConversationTurnRequest,
     LegalCitation,
 )
@@ -44,6 +47,20 @@ AUTHORITY_REFERENCE_PATTERN = re.compile(
     r"\[((?:L[A-Za-z0-9-]+:C\d+|C[A-Za-z0-9-]+:S\d+))\]"
 )
 CitationChunk = TypeVar("CitationChunk")
+
+
+class _AgentControlledCaseMemory:
+    def __init__(self, profile: CaseProfile) -> None:
+        self._initial = profile.model_copy(deep=True)
+        self.profile = profile.model_copy(deep=True)
+
+    @property
+    def updated(self) -> bool:
+        return self.profile != self._initial
+
+    async def update_profile(self, patch: CaseProfilePatch) -> CaseProfile:
+        self.profile = patch.apply(self.profile)
+        return self.profile.model_copy(deep=True)
 
 
 class _AgentControlledRetrieval:
@@ -295,11 +312,13 @@ class PersistentLegalConversationService:
             legal_knowledge=self._legal_knowledge,
             case_law_knowledge=self._case_law_knowledge,
         )
+        case_memory = _AgentControlledCaseMemory(case.profile)
         try:
             gateway_arguments = {
                 "thread_id": submission.run_id,
                 "history": history,
                 "retrieval": retrieval,
+                "case_memory": case_memory,
             }
             if on_text_delta is None:
                 generated = await self._gateway.converse(turn, **gateway_arguments)
@@ -350,6 +369,8 @@ class PersistentLegalConversationService:
                 content=content,
                 legal_citations=legal_citations,
                 case_law_citations=case_law_citations,
+                case_id=case_id,
+                case_profile=(case_memory.profile if case_memory.updated else None),
             )
             if not completed:
                 raise RunCancelledError("This analysis was cancelled")
@@ -365,6 +386,8 @@ class PersistentLegalConversationService:
             material_count=len(materials),
             legal_citations=legal_citations,
             case_law_citations=case_law_citations,
+            profile_updated=case_memory.updated,
+            case_profile=case_memory.profile,
         )
 
     async def list_messages(self, case_id: UUID) -> list[CaseConversationMessage]:
@@ -425,6 +448,8 @@ class PersistentLegalConversationService:
         content: str,
         legal_citations: list[LegalCitation],
         case_law_citations: list[CaseLawCitation],
+        case_id: UUID,
+        case_profile: CaseProfile | None,
     ) -> bool:
         async with self._session_factory() as session:
             unit_of_work = LexoraUnitOfWork(session)
@@ -436,6 +461,14 @@ class PersistentLegalConversationService:
                 result_message=content,
             ):
                 return False
+            if case_profile is not None:
+                updated_case = await unit_of_work.cases.update_profile(
+                    self._context,
+                    case_id,
+                    CaseProfileUpdate.model_validate(case_profile.model_dump(mode="json")),
+                )
+                if updated_case is None:
+                    raise CaseNotFoundError("Case not found")
             await ConversationService(unit_of_work).upsert_assistant_message(
                 self._context,
                 thread_id=thread_id,

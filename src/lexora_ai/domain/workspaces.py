@@ -125,6 +125,116 @@ class CaseProfileUpdate(CaseProfile):
     pass
 
 
+class CaseProfilePatch(BaseModel):
+    case_type: str | None = Field(
+        default=None,
+        max_length=120,
+        description="用户当前问题明确涉及的案件类型；不能确定时不要填写",
+    )
+    parties: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="用户明确提到的当事人及其身份",
+    )
+    claims: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="用户明确表达的诉求，不添加模型建议",
+    )
+    key_facts: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="用户当前消息明确陈述或确认的简洁案件事实",
+    )
+    disputed_issues: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="用户明确指出的争议，不添加模型推断的争点",
+    )
+    evidence_notes: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="用户明确提到已经持有或可以取得的证据线索",
+    )
+    missing_information: list[str] | None = Field(
+        default=None,
+        max_length=10,
+        description="更新后仍需用户补充的完整清单；提供时替换原清单，空列表表示已经补齐",
+    )
+    resolved_missing_information: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="用户本轮已经回答的待补信息原文，必须与当前档案中的条目一致",
+    )
+
+    @model_validator(mode="after")
+    def normalize_and_validate(self) -> CaseProfilePatch:
+        self.case_type = self.case_type.strip() or None if self.case_type is not None else None
+        for field_name in (
+            "parties",
+            "claims",
+            "key_facts",
+            "disputed_issues",
+            "evidence_notes",
+            "resolved_missing_information",
+        ):
+            normalized: list[str] = []
+            for item in getattr(self, field_name):
+                text = item.strip()
+                if text and text not in normalized:
+                    normalized.append(text)
+            setattr(self, field_name, normalized)
+        if self.missing_information is not None:
+            normalized_missing: list[str] = []
+            for item in self.missing_information:
+                text = item.strip()
+                if text and text not in normalized_missing:
+                    normalized_missing.append(text)
+            self.missing_information = normalized_missing
+        has_additions = any(
+            getattr(self, field_name)
+            for field_name in (
+                "parties",
+                "claims",
+                "key_facts",
+                "disputed_issues",
+                "evidence_notes",
+                "resolved_missing_information",
+            )
+        )
+        if (
+            self.case_type is None
+            and self.missing_information is None
+            and not has_additions
+        ):
+            raise ValueError("case profile patch cannot be empty")
+        return self
+
+    def apply(self, profile: CaseProfile) -> CaseProfile:
+        def merged(existing: list[str], additions: list[str]) -> list[str]:
+            result = list(existing)
+            result.extend(item for item in additions if item not in result)
+            return result
+
+        missing_information = (
+            list(self.missing_information)
+            if self.missing_information is not None
+            else list(profile.missing_information)
+        )
+        resolved = set(self.resolved_missing_information)
+        return CaseProfile(
+            case_type=self.case_type or profile.case_type,
+            parties=merged(profile.parties, self.parties),
+            claims=merged(profile.claims, self.claims),
+            key_facts=merged(profile.key_facts, self.key_facts),
+            disputed_issues=merged(profile.disputed_issues, self.disputed_issues),
+            evidence_notes=merged(profile.evidence_notes, self.evidence_notes),
+            missing_information=[
+                item for item in missing_information if item not in resolved
+            ],
+        )
+
+
 class StoredCaseMaterial(CaseMaterial):
     case_id: UUID
     reference_index: int = Field(ge=1)
@@ -165,6 +275,8 @@ class CaseConversationTurnResult(BaseModel):
     material_count: int = Field(ge=0)
     legal_citations: list[LegalCitation] = Field(default_factory=list)
     case_law_citations: list[CaseLawCitation] = Field(default_factory=list)
+    profile_updated: bool = False
+    case_profile: CaseProfile = Field(default_factory=CaseProfile)
 
 
 class CaseConversationMessage(BaseModel):

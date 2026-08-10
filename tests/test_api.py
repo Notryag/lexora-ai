@@ -110,6 +110,8 @@ def test_case_conversation_stream_returns_deltas_and_completion() -> None:
     assert events[1] == {"type": "delta", "delta": "好"}
     assert events[2]["type"] == "complete"
     assert events[2]["result"]["assistant_message"] == "你好，已收到：hi"
+    assert events[2]["result"]["profile_updated"] is False
+    assert events[2]["result"]["case_profile"]["key_facts"] == []
 
 
 def test_create_analysis() -> None:

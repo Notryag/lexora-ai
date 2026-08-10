@@ -88,6 +88,11 @@ test("persists material and continues a cited legal conversation", async ({ page
       return;
     }
     if (path.endsWith("/messages/stream") && method === "POST") {
+      profile = {
+        ...profile,
+        key_facts: [...profile.key_facts, "公司连续三个月拖欠工资"],
+      };
+      persistedCase.profile = profile;
       messages.push(
         {
           id: "018f6f7c-3500-7c4a-83e7-64dd8aa83295",
@@ -138,6 +143,8 @@ test("persists material and continues a cited legal conversation", async ({ page
           material_count: 1,
           legal_citations: messages[1].legal_citations,
           case_law_citations: [],
+          profile_updated: true,
+          case_profile: profile,
           } }),
         ].join("\n") + "\n",
       });
@@ -171,6 +178,11 @@ test("persists material and continues a cited legal conversation", async ({ page
   await expect(page.getByText("[1]", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("L1234567890abcdef:C30", { exact: true })).toHaveCount(0);
   await expect(page.getByText("未在正文使用的法规", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "档案 4，已更新" })).toBeVisible();
+  await page.getByRole("button", { name: "档案 4，已更新" }).click();
+  await expect(page.getByRole("textbox", { name: "当事人陈述" })).toHaveValue(
+    "公司连续三个月拖欠工资",
+  );
   await expect(page.getByRole("link", { name: /中华人民共和国劳动合同法/ })).toHaveAttribute(
     "href",
     "https://flk.npc.gov.cn/detail?id=test",

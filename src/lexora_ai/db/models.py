@@ -235,7 +235,7 @@ class ConversationThreadRow(Base):
     title: Mapped[str | None] = mapped_column(String(240), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    runtime_checkpoint_ns: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    runtime_thread_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     runtime_checkpoint_id: Mapped[str | None] = mapped_column(String(240), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

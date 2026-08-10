@@ -211,11 +211,11 @@ class ConversationThreadRepository:
         self,
         context: UserContext,
         thread_id: UUID,
-    ) -> tuple[str, str] | None:
+    ) -> tuple[UUID, str] | None:
         row = (
             await self.session.execute(
                 select(
-                    ConversationThreadRow.runtime_checkpoint_ns,
+                    ConversationThreadRow.runtime_thread_id,
                     ConversationThreadRow.runtime_checkpoint_id,
                 ).where(
                     ConversationThreadRow.id == thread_id,
@@ -225,9 +225,9 @@ class ConversationThreadRepository:
         ).one_or_none()
         if row is None or row.runtime_checkpoint_id is None:
             return None
-        if row.runtime_checkpoint_ns is None:
-            raise RuntimeError("Persisted checkpoint ID has no namespace")
-        return row.runtime_checkpoint_ns, row.runtime_checkpoint_id
+        if row.runtime_thread_id is None:
+            raise RuntimeError("Persisted checkpoint ID has no runtime thread")
+        return row.runtime_thread_id, row.runtime_checkpoint_id
 
     async def get_runtime_checkpoint_id(
         self,
@@ -242,7 +242,7 @@ class ConversationThreadRepository:
         context: UserContext,
         thread_id: UUID,
         *,
-        checkpoint_ns: str,
+        runtime_thread_id: UUID,
         checkpoint_id: str,
     ) -> bool:
         result = await self.session.execute(
@@ -252,7 +252,7 @@ class ConversationThreadRepository:
                 ConversationThreadRow.owner_id == context.user_id,
             )
             .values(
-                runtime_checkpoint_ns=checkpoint_ns,
+                runtime_thread_id=runtime_thread_id,
                 runtime_checkpoint_id=checkpoint_id,
                 updated_at=func.now(),
             )

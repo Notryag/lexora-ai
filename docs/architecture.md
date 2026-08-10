@@ -47,8 +47,8 @@ idempotency, and resumable-interaction contracts. This is its second real produc
 Dayboard.
 
 Lexora maintains three application authorities. `conversation_threads` stores case-conversation
-metadata and the last successfully committed LangGraph checkpoint namespace and ID. `agent_runs` stores one
-execution lifecycle plus bounded list summaries. `agent_run_events` is a Thread-ordered journal;
+metadata and the last successfully committed LangGraph runtime thread and checkpoint ID. `agent_runs`
+stores one execution lifecycle plus bounded list summaries. `agent_run_events` is a Thread-ordered journal;
 `message.human` and `message.ai` rows are the conversation source of truth and assistant event
 extensions hold citation presentations. There is no separate messages table and Run rows do not
 store complete input/output bodies. Streaming token deltas are not persisted individually.
@@ -118,11 +118,12 @@ generation workflow. Conversation history remains the durable record.
 
 ## Conversation Experience Contract
 
-The primary workflow is chat-first. A stable product Thread is also the LangGraph `thread_id`; every
-turn still creates an independent product/runtime Run. On first checkpoint adoption, persisted
-message events bootstrap existing conversation history. Later turns resume the last successfully
-committed checkpoint and add only the new user turn. Failed or cancelled partial checkpoints never
-advance the Thread pointer. The current case profile remains product-owned context, and the Agent may
+The primary workflow is chat-first. The product Thread owns conversation identity while a committed
+runtime thread owns LangGraph state; every turn still creates an independent Run. Before the first
+successful checkpoint, each attempt uses its Run ID as an isolated runtime thread and bootstraps only
+completed persisted message pairs. Later turns reuse the committed runtime thread, resume the last
+successful checkpoint, and add only the new user turn. Failed or cancelled partial checkpoints never
+advance either Thread pointer. The current case profile remains product-owned context, and the Agent may
 retrieve private evidence, verified legal authorities, or reviewed cases through separate tools.
 The model must reuse already supplied facts, avoid repeated questions, and ask at most three
 prioritized clarification questions when a missing fact materially changes the analysis. Once
@@ -154,9 +155,9 @@ compact `[1]`, `[2]` markers and hides unused legacy citation cards.
 Completed: case workspace persistence, private material ingestion, persisted lexical/vector chunks,
 hybrid retrieval, and durable Thread/Run/event-journal storage through product-owned adapters.
 
-Completed: official North PostgreSQL checkpointing now restores Agent state by stable Thread while
-each turn retains a distinct Run lifecycle. Lexora Alembic excludes the four North-owned checkpoint
-tables from product schema comparison.
+Completed: official North PostgreSQL checkpointing now restores Agent state from a committed runtime
+thread and checkpoint while each turn retains a distinct product Run lifecycle. Lexora Alembic
+excludes the four North-owned checkpoint tables from product schema comparison.
 
 Completed: the initial five-source statute set has been synchronized, structurally verified, and
 approved. Its evaluation covers 1,617 article chunks and 17 grounded queries. The deterministic

@@ -69,7 +69,6 @@ class NorthCaseAnalysisGateway:
         *,
         thread_id: UUID,
         run_id: UUID | None = None,
-        checkpoint_ns: str | None = None,
         checkpoint_id: str | None = None,
         history: tuple[ConversationContextMessage, ...] = (),
         evidence: tuple[ConversationEvidenceChunk, ...] | None = None,
@@ -82,7 +81,6 @@ class NorthCaseAnalysisGateway:
             request,
             thread_id=thread_id,
             run_id=run_id,
-            checkpoint_ns=checkpoint_ns,
             checkpoint_id=checkpoint_id,
             on_text_delta=lambda _delta: None,
             history=history,
@@ -99,7 +97,6 @@ class NorthCaseAnalysisGateway:
         *,
         thread_id: UUID,
         run_id: UUID | None = None,
-        checkpoint_ns: str | None = None,
         checkpoint_id: str | None = None,
         on_text_delta: Callable[[str], None],
         history: tuple[ConversationContextMessage, ...] = (),
@@ -113,7 +110,6 @@ class NorthCaseAnalysisGateway:
             request,
             thread_id=thread_id,
             run_id=run_id,
-            checkpoint_ns=checkpoint_ns,
             checkpoint_id=checkpoint_id,
             on_text_delta=on_text_delta,
             history=history,
@@ -130,7 +126,6 @@ class NorthCaseAnalysisGateway:
         *,
         thread_id: UUID,
         run_id: UUID | None,
-        checkpoint_ns: str | None,
         checkpoint_id: str | None,
         on_text_delta: Callable[[str], None],
         history: tuple[ConversationContextMessage, ...],
@@ -173,11 +168,7 @@ class NorthCaseAnalysisGateway:
                 for message in history
             )
         graph_messages.append(HumanMessage(content=prompt))
-        resolved_checkpoint_ns = checkpoint_ns or resolved_run_id
-        configurable = {
-            "thread_id": resolved_thread_id,
-            "checkpoint_ns": resolved_checkpoint_ns,
-        }
+        configurable = {"thread_id": resolved_thread_id}
         if checkpoint_id is not None:
             configurable["checkpoint_id"] = checkpoint_id
         result = await RunExecutor(MemoryStreamBridge(), manager).execute(
@@ -202,17 +193,12 @@ class NorthCaseAnalysisGateway:
         return GeneratedConversationTurn(
             content=content,
             runtime_thread_id=resolved_thread_id,
-            runtime_checkpoint_ns=resolved_checkpoint_ns,
-            runtime_checkpoint_id=await self._latest_checkpoint_id(
-                resolved_thread_id,
-                resolved_checkpoint_ns,
-            ),
+            runtime_checkpoint_id=await self._latest_checkpoint_id(resolved_thread_id),
         )
 
     async def _latest_checkpoint_id(
         self,
         thread_id: str,
-        checkpoint_ns: str,
     ) -> str | None:
         if self._checkpointer is None:
             return None
@@ -220,7 +206,6 @@ class NorthCaseAnalysisGateway:
             {
                 "configurable": {
                     "thread_id": thread_id,
-                    "checkpoint_ns": checkpoint_ns,
                 }
             }
         )

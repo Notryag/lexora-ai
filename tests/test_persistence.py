@@ -57,7 +57,6 @@ class RecordingGateway:
         *,
         thread_id,
         run_id=None,
-        checkpoint_ns=None,
         checkpoint_id=None,
         history: tuple[ConversationContextMessage, ...] = (),
         evidence: tuple[ConversationEvidenceChunk, ...] | None = None,
@@ -66,7 +65,7 @@ class RecordingGateway:
         retrieval=None,
         case_memory=None,
     ) -> GeneratedConversationTurn:
-        del run_id, checkpoint_ns, checkpoint_id
+        del run_id, checkpoint_id
         if retrieval is not None:
             evidence = await retrieval.search_materials(request.message)
             legal_authorities = await retrieval.search_legal_authorities(request.message)
@@ -94,7 +93,6 @@ class RecordingGateway:
         *,
         thread_id,
         run_id=None,
-        checkpoint_ns=None,
         checkpoint_id=None,
         on_text_delta,
         history: tuple[ConversationContextMessage, ...] = (),
@@ -108,7 +106,6 @@ class RecordingGateway:
             request,
             thread_id=thread_id,
             run_id=run_id,
-            checkpoint_ns=checkpoint_ns,
             checkpoint_id=checkpoint_id,
             history=history,
             evidence=evidence,
@@ -126,7 +123,6 @@ class CheckpointRecordingGateway:
     def __init__(self) -> None:
         self.thread_ids = []
         self.run_ids = []
-        self.checkpoint_namespaces = []
         self.checkpoint_ids = []
         self.histories = []
 
@@ -136,7 +132,6 @@ class CheckpointRecordingGateway:
         *,
         thread_id,
         run_id,
-        checkpoint_ns,
         checkpoint_id,
         history=(),
         **kwargs,
@@ -144,14 +139,12 @@ class CheckpointRecordingGateway:
         del request, kwargs
         self.thread_ids.append(thread_id)
         self.run_ids.append(run_id)
-        self.checkpoint_namespaces.append(checkpoint_ns)
         self.checkpoint_ids.append(checkpoint_id)
         self.histories.append(history)
         next_checkpoint_id = f"checkpoint-{len(self.run_ids)}"
         return GeneratedConversationTurn(
             content="已记录，请继续。",
             runtime_thread_id=str(thread_id),
-            runtime_checkpoint_ns=checkpoint_ns,
             runtime_checkpoint_id=next_checkpoint_id,
         )
 
@@ -161,7 +154,6 @@ class FailOnceCheckpointGateway(CheckpointRecordingGateway):
         if not self.run_ids:
             self.thread_ids.append(kwargs["thread_id"])
             self.run_ids.append(kwargs["run_id"])
-            self.checkpoint_namespaces.append(kwargs["checkpoint_ns"])
             self.checkpoint_ids.append(kwargs["checkpoint_id"])
             self.histories.append(kwargs.get("history", ()))
             raise RuntimeError("provider failed after a partial checkpoint")
@@ -313,17 +305,16 @@ async def test_successful_checkpoint_advances_thread_without_replaying_history(
 
     assert first.thread_id == second.thread_id
     assert first.run_id != second.run_id
-    assert gateway.thread_ids == [first.thread_id, first.thread_id]
+    assert gateway.thread_ids == [first.run_id, first.run_id]
     assert gateway.run_ids == [first.run_id, second.run_id]
-    assert gateway.checkpoint_namespaces == [str(first.run_id), str(first.run_id)]
     assert gateway.checkpoint_ids == [None, "checkpoint-1"]
     assert gateway.histories == [(), ()]
     async with session_factory() as session:
         unit_of_work = LexoraUnitOfWork(session)
-        assert await unit_of_work.threads.get_runtime_checkpoint_id(
+        assert await unit_of_work.threads.get_runtime_checkpoint(
             context,
             first.thread_id,
-        ) == "checkpoint-2"
+        ) == (first.run_id, "checkpoint-2")
 
 
 @pytest.mark.asyncio
@@ -351,9 +342,10 @@ async def test_failed_first_run_does_not_become_the_next_checkpoint_baseline(
     )
 
     assert gateway.checkpoint_ids == [None, None]
-    assert gateway.checkpoint_namespaces[0] == str(gateway.run_ids[0])
-    assert gateway.checkpoint_namespaces[1] == str(recovered.run_id)
-    assert gateway.checkpoint_namespaces[0] != gateway.checkpoint_namespaces[1]
+    assert gateway.thread_ids == gateway.run_ids
+    assert gateway.thread_ids[1] == recovered.run_id
+    assert gateway.thread_ids[0] != gateway.thread_ids[1]
+    assert gateway.histories == [(), ()]
 
 
 @pytest.mark.asyncio

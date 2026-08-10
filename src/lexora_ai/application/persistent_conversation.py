@@ -11,7 +11,13 @@ from agent_platform.application import (
     CommandSubmissionService,
     ConversationService,
 )
-from agent_platform.core import ActiveThreadRunError, PresentationEnvelope, UserContext
+from agent_platform.core import (
+    ActiveThreadRunError,
+    ConversationMessage,
+    ConversationRole,
+    PresentationEnvelope,
+    UserContext,
+)
 from sqlalchemy.exc import IntegrityError
 
 from lexora_ai.application.errors import CaseNotFoundError, RunCancelledError
@@ -246,7 +252,7 @@ class PersistentLegalConversationService:
             checkpoint = await unit_of_work.threads.get_runtime_checkpoint(
                 self._context, thread.id
             )
-            checkpoint_ns = checkpoint[0] if checkpoint is not None else None
+            runtime_thread_id = checkpoint[0] if checkpoint is not None else None
             checkpoint_id = checkpoint[1] if checkpoint is not None else None
             previous_messages = (
                 await ConversationService(unit_of_work).list_messages(
@@ -276,7 +282,7 @@ class PersistentLegalConversationService:
         await self._mark_running(submission.run_id)
         history = tuple(
             ConversationContextMessage(role=message.role.value, content=message.content)
-            for message in previous_messages[-20:]
+            for message in _completed_history(previous_messages)[-20:]
         )
         turn = ConversationTurnRequest(
             thread_id=thread.id,
@@ -324,9 +330,8 @@ class PersistentLegalConversationService:
         case_memory = _AgentControlledCaseMemory(case.profile)
         try:
             gateway_arguments = {
-                "thread_id": thread.id,
+                "thread_id": runtime_thread_id or submission.run_id,
                 "run_id": submission.run_id,
-                "checkpoint_ns": checkpoint_ns or str(submission.run_id),
                 "checkpoint_id": checkpoint_id,
                 "history": history,
                 "retrieval": retrieval,
@@ -352,6 +357,9 @@ class PersistentLegalConversationService:
                 raise RuntimeError("conversation provider returned an empty response")
             if on_text_delta is not None and not emitted_delta:
                 on_text_delta(content)
+            expected_runtime_thread_id = runtime_thread_id or submission.run_id
+            if generated.runtime_thread_id != str(expected_runtime_thread_id):
+                raise RuntimeError("conversation provider changed the runtime thread ID")
             legal_citations = [
                 LegalCitation(
                     reference=chunk.reference,
@@ -384,7 +392,7 @@ class PersistentLegalConversationService:
                 case_id=case_id,
                 case_profile=(case_memory.profile if case_memory.updated else None),
                 checkpoint_id=generated.runtime_checkpoint_id,
-                checkpoint_ns=generated.runtime_checkpoint_ns,
+                runtime_thread_id=expected_runtime_thread_id,
             )
             if not completed:
                 raise RunCancelledError("This analysis was cancelled")
@@ -443,8 +451,6 @@ class PersistentLegalConversationService:
                 )
                 for message in messages
             ]
-
-
     async def _mark_running(self, run_id: UUID) -> None:
         async with self._session_factory() as session:
             unit_of_work = LexoraUnitOfWork(session)
@@ -465,7 +471,7 @@ class PersistentLegalConversationService:
         case_id: UUID,
         case_profile: CaseProfile | None,
         checkpoint_id: str | None,
-        checkpoint_ns: str | None,
+        runtime_thread_id: UUID,
     ) -> bool:
         async with self._session_factory() as session:
             unit_of_work = LexoraUnitOfWork(session)
@@ -486,12 +492,10 @@ class PersistentLegalConversationService:
                 if updated_case is None:
                     raise CaseNotFoundError("Case not found")
             if checkpoint_id is not None:
-                if checkpoint_ns is None:
-                    raise RuntimeError("Completed checkpoint has no namespace")
                 if not await unit_of_work.threads.update_runtime_checkpoint(
                     self._context,
                     thread_id,
-                    checkpoint_ns=checkpoint_ns,
+                    runtime_thread_id=runtime_thread_id,
                     checkpoint_id=checkpoint_id,
                 ):
                     raise RuntimeError(
@@ -528,7 +532,6 @@ class PersistentLegalConversationService:
         }:
             return {}
         return presentation.payload
-
     async def _mark_failed(self, run_id: UUID, error: BaseException) -> None:
         async with self._session_factory() as session:
             unit_of_work = LexoraUnitOfWork(session)
@@ -542,6 +545,13 @@ class PersistentLegalConversationService:
                     error_message=str(error)[:4000] or "conversation failed",
                 )
                 await unit_of_work.commit()
+
+
+def _completed_history(messages: list[ConversationMessage]) -> list[ConversationMessage]:
+    for index in range(len(messages) - 1, -1, -1):
+        if messages[index].role == ConversationRole.assistant:
+            return messages[: index + 1]
+    return []
 
 
 def _cited_chunks(

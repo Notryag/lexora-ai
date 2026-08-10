@@ -243,9 +243,18 @@ class PersistentLegalConversationService:
             )
             if active_run is not None:
                 raise ActiveThreadRunError("This case already has an active analysis")
-            previous_messages = await unit_of_work.messages.list_for_thread(
-                self._context,
-                thread.id,
+            checkpoint = await unit_of_work.threads.get_runtime_checkpoint(
+                self._context, thread.id
+            )
+            checkpoint_ns = checkpoint[0] if checkpoint is not None else None
+            checkpoint_id = checkpoint[1] if checkpoint is not None else None
+            previous_messages = (
+                await ConversationService(unit_of_work).list_messages(
+                    self._context,
+                    thread.id,
+                )
+                if checkpoint_id is None
+                else []
             )
             try:
                 submission = await CommandSubmissionService(unit_of_work).submit(
@@ -315,7 +324,10 @@ class PersistentLegalConversationService:
         case_memory = _AgentControlledCaseMemory(case.profile)
         try:
             gateway_arguments = {
-                "thread_id": submission.run_id,
+                "thread_id": thread.id,
+                "run_id": submission.run_id,
+                "checkpoint_ns": checkpoint_ns or str(submission.run_id),
+                "checkpoint_id": checkpoint_id,
                 "history": history,
                 "retrieval": retrieval,
                 "case_memory": case_memory,
@@ -371,6 +383,8 @@ class PersistentLegalConversationService:
                 case_law_citations=case_law_citations,
                 case_id=case_id,
                 case_profile=(case_memory.profile if case_memory.updated else None),
+                checkpoint_id=generated.runtime_checkpoint_id,
+                checkpoint_ns=generated.runtime_checkpoint_ns,
             )
             if not completed:
                 raise RunCancelledError("This analysis was cancelled")
@@ -450,6 +464,8 @@ class PersistentLegalConversationService:
         case_law_citations: list[CaseLawCitation],
         case_id: UUID,
         case_profile: CaseProfile | None,
+        checkpoint_id: str | None,
+        checkpoint_ns: str | None,
     ) -> bool:
         async with self._session_factory() as session:
             unit_of_work = LexoraUnitOfWork(session)
@@ -469,6 +485,18 @@ class PersistentLegalConversationService:
                 )
                 if updated_case is None:
                     raise CaseNotFoundError("Case not found")
+            if checkpoint_id is not None:
+                if checkpoint_ns is None:
+                    raise RuntimeError("Completed checkpoint has no namespace")
+                if not await unit_of_work.threads.update_runtime_checkpoint(
+                    self._context,
+                    thread_id,
+                    checkpoint_ns=checkpoint_ns,
+                    checkpoint_id=checkpoint_id,
+                ):
+                    raise RuntimeError(
+                        "Conversation thread disappeared while saving checkpoint"
+                    )
             await ConversationService(unit_of_work).upsert_assistant_message(
                 self._context,
                 thread_id=thread_id,

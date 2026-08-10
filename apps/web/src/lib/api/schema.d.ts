@@ -457,10 +457,23 @@ export interface components {
              */
             run_id: string;
             status: components["schemas"]["CaseRunStatus"];
-            /** Input Message */
-            input_message: string;
-            /** Result Message */
-            result_message: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Message Count
+             * @default 0
+             */
+            message_count: number;
+            /** First Human Message */
+            first_human_message?: string | null;
+            /** Last Ai Message */
+            last_ai_message?: string | null;
+            /** Started At */
+            started_at?: string | null;
+            /** Completed At */
+            completed_at?: string | null;
             /**
              * Created At
              * Format: date-time

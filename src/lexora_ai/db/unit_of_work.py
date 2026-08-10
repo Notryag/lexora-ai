@@ -8,7 +8,6 @@ from lexora_ai.db.legal_source_repository import LegalSourceRepository
 from lexora_ai.db.platform_repositories import (
     AgentRunEventRepository,
     AgentRunRepository,
-    ConversationMessageRepository,
     ConversationStateRepository,
     ConversationThreadRepository,
     IdempotencyRepository,
@@ -22,7 +21,6 @@ class LexoraUnitOfWork:
         self.case_law = CaseLawRepository(session)
         self.legal_sources = LegalSourceRepository(session)
         self.threads = ConversationThreadRepository(session)
-        self.messages = ConversationMessageRepository(session)
         self.states = ConversationStateRepository(session)
         self.runs = AgentRunRepository(session)
         self.events = AgentRunEventRepository(session)

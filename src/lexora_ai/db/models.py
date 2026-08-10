@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -235,6 +235,8 @@ class ConversationThreadRow(Base):
     title: Mapped[str | None] = mapped_column(String(240), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    runtime_checkpoint_ns: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    runtime_checkpoint_id: Mapped[str | None] = mapped_column(String(240), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -269,8 +271,13 @@ class AgentRunRow(Base):
         nullable=False,
     )
     status: Mapped[str] = mapped_column(String(40), nullable=False)
-    input_message: Mapped[str] = mapped_column(String(4000), nullable=False)
-    result_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    message_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    first_human_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_ai_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -279,11 +286,35 @@ class AgentRunRow(Base):
     )
 
 
-class ConversationMessageRow(Base):
-    __tablename__ = "conversation_messages"
+class AgentRunEventRow(Base):
+    __tablename__ = "agent_run_events"
     __table_args__ = (
-        UniqueConstraint("owner_id", "run_id", "role", name="uq_messages_owner_run_role"),
-        CheckConstraint("role IN ('user', 'assistant')", name="ck_message_role"),
+        UniqueConstraint("thread_id", "seq", name="uq_run_events_thread_seq"),
+        Index("ix_run_events_owner_run_seq", "owner_id", "run_id", "seq"),
+        Index(
+            "ix_run_events_owner_thread_category_seq",
+            "owner_id",
+            "thread_id",
+            "category",
+            "seq",
+        ),
+        Index(
+            "uq_run_events_message_role",
+            "owner_id",
+            "run_id",
+            "event_type",
+            unique=True,
+            postgresql_where=text("event_type IN ('message.human', 'message.ai')"),
+            sqlite_where=text("event_type IN ('message.human', 'message.ai')"),
+        ),
+        Index(
+            "uq_run_events_execution_input",
+            "owner_id",
+            "run_id",
+            unique=True,
+            postgresql_where=text("event_type = 'agent.input'"),
+            sqlite_where=text("event_type = 'agent.input'"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
@@ -293,25 +324,6 @@ class ConversationMessageRow(Base):
         ForeignKey("conversation_threads.id", ondelete="CASCADE"),
         nullable=False,
     )
-    run_id: Mapped[UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False
-    )
-    role: Mapped[str] = mapped_column(String(32), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    presentation: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(UTC),
-        server_default=func.now(),
-    )
-
-
-class AgentRunEventRow(Base):
-    __tablename__ = "agent_run_events"
-    __table_args__ = (UniqueConstraint("run_id", "seq", name="uq_run_events_run_seq"),)
-
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     run_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False
     )

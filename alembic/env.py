@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 from lexora_ai.config import get_settings
 from lexora_ai.db.models import Base
+from lexora_ai.db.schema_ownership import include_lexora_schema_name
 
 config = context.config
 if config.config_file_name is not None:
@@ -22,6 +23,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
+        include_name=include_lexora_schema_name,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -30,7 +32,11 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_name=include_lexora_schema_name,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

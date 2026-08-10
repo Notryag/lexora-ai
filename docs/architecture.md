@@ -17,7 +17,8 @@ CaseWorkspaceService / PersistentLegalConversationService
     |
     +----> Lexora PostgreSQL adapters
     |          +----> cases, structured case profiles, and materials
-    |          +----> Agent Platform Conversation / Run / messages
+    |          +----> Agent Platform Thread / Run / ordered event journal
+    |          +----> North-owned LangGraph checkpoint tables
     |          +----> persisted material chunks and vectors
     +----> rag-core -> lexical/vector ranking and rank fusion
     +----> OpenAI-compatible Embedding provider
@@ -44,6 +45,13 @@ references such as `[M1:C1]`, `[L...:C...]`, and `[C...:S...]`.
 Lexora now reuses Agent Platform's product-neutral Conversation, message, Run transition, event,
 idempotency, and resumable-interaction contracts. This is its second real product consumer after
 Dayboard.
+
+Lexora maintains three application authorities. `conversation_threads` stores case-conversation
+metadata and the last successfully committed LangGraph checkpoint namespace and ID. `agent_runs` stores one
+execution lifecycle plus bounded list summaries. `agent_run_events` is a Thread-ordered journal;
+`message.human` and `message.ai` rows are the conversation source of truth and assistant event
+extensions hold citation presentations. There is no separate messages table and Run rows do not
+store complete input/output bodies. Streaming token deltas are not persisted individually.
 
 Agent Platform is not the complete AI core: North owns runtime execution and `rag-core` owns
 retrieval primitives. Lexora owns its PostgreSQL ORM models and repository adapters, case ownership,
@@ -110,11 +118,15 @@ generation workflow. Conversation history remains the durable record.
 
 ## Conversation Experience Contract
 
-The primary workflow is chat-first. Each turn receives recent persisted messages and the current case
-profile, then the Agent may retrieve private evidence, verified legal authorities, or reviewed cases
-through separate tools. The model must reuse already supplied facts, avoid repeated questions, and ask
-at most three prioritized clarification questions when a missing fact materially changes the analysis.
-Once context is sufficient, it should answer the user's immediate question before expanding into
+The primary workflow is chat-first. A stable product Thread is also the LangGraph `thread_id`; every
+turn still creates an independent product/runtime Run. On first checkpoint adoption, persisted
+message events bootstrap existing conversation history. Later turns resume the last successfully
+committed checkpoint and add only the new user turn. Failed or cancelled partial checkpoints never
+advance the Thread pointer. The current case profile remains product-owned context, and the Agent may
+retrieve private evidence, verified legal authorities, or reviewed cases through separate tools.
+The model must reuse already supplied facts, avoid repeated questions, and ask at most three
+prioritized clarification questions when a missing fact materially changes the analysis. Once
+context is sufficient, it should answer the user's immediate question before expanding into
 structured analysis.
 
 The browser submits one streaming HTTP request per turn. North `messages` events become incremental
@@ -140,7 +152,11 @@ compact `[1]`, `[2]` markers and hides unused legacy citation cards.
 ## Current Limits And Next Slices
 
 Completed: case workspace persistence, private material ingestion, persisted lexical/vector chunks,
-hybrid retrieval, and durable Conversation/Run/message storage through product-owned adapters.
+hybrid retrieval, and durable Thread/Run/event-journal storage through product-owned adapters.
+
+Completed: official North PostgreSQL checkpointing now restores Agent state by stable Thread while
+each turn retains a distinct Run lifecycle. Lexora Alembic excludes the four North-owned checkpoint
+tables from product schema comparison.
 
 Completed: the initial five-source statute set has been synchronized, structurally verified, and
 approved. Its evaluation covers 1,617 article chunks and 17 grounded queries. The deterministic

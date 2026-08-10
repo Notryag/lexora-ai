@@ -25,6 +25,8 @@ class GeneratedCaseAnalysis:
 class GeneratedConversationTurn:
     content: str
     runtime_thread_id: str
+    runtime_checkpoint_ns: str | None = None
+    runtime_checkpoint_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +99,9 @@ class LegalConversationGateway(Protocol):
         request: ConversationTurnRequest,
         *,
         thread_id: UUID,
+        run_id: UUID | None = None,
+        checkpoint_ns: str | None = None,
+        checkpoint_id: str | None = None,
         history: tuple[ConversationContextMessage, ...] = (),
         evidence: tuple[ConversationEvidenceChunk, ...] | None = None,
         legal_authorities: tuple[ConversationLegalChunk, ...] = (),
@@ -110,6 +115,9 @@ class LegalConversationGateway(Protocol):
         request: ConversationTurnRequest,
         *,
         thread_id: UUID,
+        run_id: UUID | None = None,
+        checkpoint_ns: str | None = None,
+        checkpoint_id: str | None = None,
         on_text_delta: Callable[[str], None],
         history: tuple[ConversationContextMessage, ...] = (),
         evidence: tuple[ConversationEvidenceChunk, ...] | None = None,

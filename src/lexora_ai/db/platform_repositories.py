@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from agent_platform.core import (
@@ -8,7 +9,6 @@ from agent_platform.core import (
     AgentRunEvent,
     AgentRunEventCategory,
     AgentRunStatus,
-    ConversationMessage,
     ConversationRole,
     ConversationState,
     ConversationThread,
@@ -17,7 +17,6 @@ from agent_platform.core import (
     IdempotencyClaim,
     IdempotencyRecord,
     PendingInteraction,
-    PresentationEnvelope,
     UserContext,
 )
 from sqlalchemy import delete, func, select, update
@@ -27,7 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lexora_ai.db.models import (
     AgentRunEventRow,
     AgentRunRow,
-    ConversationMessageRow,
     ConversationStateRow,
     ConversationThreadRow,
     IdempotencyRow,
@@ -47,27 +45,19 @@ def thread_from_row(row: ConversationThreadRow) -> ConversationThread:
     )
 
 
-def message_from_row(row: ConversationMessageRow) -> ConversationMessage:
-    presentation = PresentationEnvelope.model_validate(row.presentation) if row.presentation else None
-    return ConversationMessage(
-        id=row.id,
-        thread_id=row.thread_id,
-        run_id=row.run_id,
-        role=ConversationRole(row.role),
-        content=row.content,
-        presentation=presentation,
-        created_at=row.created_at,
-    )
-
-
 def run_from_row(row: AgentRunRow) -> AgentRun:
     return AgentRun(
         id=row.id,
         user_id=row.owner_id,
         thread_id=row.thread_id,
         status=AgentRunStatus(row.status),
-        input_message=row.input_message,
-        result_message=row.result_message,
+        model_name=row.model_name,
+        error=row.error,
+        message_count=row.message_count,
+        first_human_message=row.first_human_message,
+        last_ai_message=row.last_ai_message,
+        started_at=row.started_at,
+        completed_at=row.completed_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -77,6 +67,7 @@ def event_from_row(row: AgentRunEventRow) -> AgentRunEvent:
     extension = EventExtensionEnvelope.model_validate(row.extension) if row.extension else None
     return AgentRunEvent(
         id=row.id,
+        thread_id=row.thread_id,
         run_id=row.run_id,
         seq=row.seq,
         event_type=row.event_type,
@@ -216,119 +207,57 @@ class ConversationThreadRepository:
         )
         return thread_from_row(row) if row else None
 
-
-class ConversationMessageRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self.session = session
-
-    async def append_once(
+    async def get_runtime_checkpoint(
         self,
         context: UserContext,
+        thread_id: UUID,
+    ) -> tuple[str, str] | None:
+        row = (
+            await self.session.execute(
+                select(
+                    ConversationThreadRow.runtime_checkpoint_ns,
+                    ConversationThreadRow.runtime_checkpoint_id,
+                ).where(
+                    ConversationThreadRow.id == thread_id,
+                    ConversationThreadRow.owner_id == context.user_id,
+                )
+            )
+        ).one_or_none()
+        if row is None or row.runtime_checkpoint_id is None:
+            return None
+        if row.runtime_checkpoint_ns is None:
+            raise RuntimeError("Persisted checkpoint ID has no namespace")
+        return row.runtime_checkpoint_ns, row.runtime_checkpoint_id
+
+    async def get_runtime_checkpoint_id(
+        self,
+        context: UserContext,
+        thread_id: UUID,
+    ) -> str | None:
+        checkpoint = await self.get_runtime_checkpoint(context, thread_id)
+        return checkpoint[1] if checkpoint is not None else None
+
+    async def update_runtime_checkpoint(
+        self,
+        context: UserContext,
+        thread_id: UUID,
         *,
-        thread_id: UUID,
-        run_id: UUID,
-        role: ConversationRole,
-        content: str,
-        presentation: PresentationEnvelope | None = None,
-    ) -> ConversationMessage:
-        existing = await self.session.scalar(
-            select(ConversationMessageRow).where(
-                ConversationMessageRow.owner_id == context.user_id,
-                ConversationMessageRow.run_id == run_id,
-                ConversationMessageRow.role == role.value,
-            )
-        )
-        if existing is not None:
-            return message_from_row(existing)
-        row = ConversationMessageRow(
-            owner_id=context.user_id,
-            thread_id=thread_id,
-            run_id=run_id,
-            role=role.value,
-            content=content,
-            presentation=presentation.model_dump(mode="json") if presentation else None,
-        )
-        self.session.add(row)
-        await self.session.flush()
-        await self.session.refresh(row)
-        return message_from_row(row)
-
-    async def upsert_assistant(
-        self,
-        context: UserContext,
-        *,
-        thread_id: UUID,
-        run_id: UUID,
-        content: str,
-        presentation: PresentationEnvelope | None,
-    ) -> ConversationMessage:
-        row = await self.session.scalar(
-            select(ConversationMessageRow).where(
-                ConversationMessageRow.owner_id == context.user_id,
-                ConversationMessageRow.run_id == run_id,
-                ConversationMessageRow.role == ConversationRole.assistant.value,
-            )
-        )
-        if row is None:
-            return await self.append_once(
-                context,
-                thread_id=thread_id,
-                run_id=run_id,
-                role=ConversationRole.assistant,
-                content=content,
-                presentation=presentation,
-            )
-        row.content = content
-        row.presentation = presentation.model_dump(mode="json") if presentation else None
-        await self.session.flush()
-        await self.session.refresh(row)
-        return message_from_row(row)
-
-    async def get_assistant_for_run(
-        self,
-        context: UserContext,
-        run_id: UUID,
-    ) -> ConversationMessage | None:
-        row = await self.session.scalar(
-            select(ConversationMessageRow).where(
-                ConversationMessageRow.owner_id == context.user_id,
-                ConversationMessageRow.run_id == run_id,
-                ConversationMessageRow.role == ConversationRole.assistant.value,
-            )
-        )
-        return message_from_row(row) if row else None
-
-    async def list_for_thread(
-        self,
-        context: UserContext,
-        thread_id: UUID,
-    ) -> list[ConversationMessage]:
-        rows = await self.session.scalars(
-            select(ConversationMessageRow)
+        checkpoint_ns: str,
+        checkpoint_id: str,
+    ) -> bool:
+        result = await self.session.execute(
+            update(ConversationThreadRow)
             .where(
-                ConversationMessageRow.owner_id == context.user_id,
-                ConversationMessageRow.thread_id == thread_id,
+                ConversationThreadRow.id == thread_id,
+                ConversationThreadRow.owner_id == context.user_id,
             )
-            .order_by(ConversationMessageRow.created_at.asc(), ConversationMessageRow.id.asc())
+            .values(
+                runtime_checkpoint_ns=checkpoint_ns,
+                runtime_checkpoint_id=checkpoint_id,
+                updated_at=func.now(),
+            )
         )
-        return [message_from_row(row) for row in rows]
-
-    async def list_page_for_thread(
-        self,
-        context: UserContext,
-        thread_id: UUID,
-        *,
-        before: UUID | None,
-        limit: int,
-    ) -> tuple[list[ConversationMessage], UUID | None]:
-        messages = await self.list_for_thread(context, thread_id)
-        if before is not None:
-            cursor = next((index for index, item in enumerate(messages) if item.id == before), None)
-            if cursor is None:
-                raise LookupError("Conversation message cursor not found")
-            messages = messages[:cursor]
-        page = messages[-limit:]
-        return page, page[0].id if len(messages) > len(page) else None
+        return result.rowcount == 1
 
 
 class AgentRunRepository:
@@ -339,19 +268,20 @@ class AgentRunRepository:
         self,
         context: UserContext,
         *,
-        input_message: str,
-        thread_id: UUID | None,
+        thread_id: UUID,
         status: AgentRunStatus,
         run_id: UUID | None,
+        model_name: str | None = None,
+        first_human_message: str | None = None,
     ) -> AgentRun:
-        if thread_id is None:
-            raise ValueError("thread_id is required for Lexora runs")
         row = AgentRunRow(
             id=run_id or uuid4(),
             owner_id=context.user_id,
             thread_id=thread_id,
             status=status.value,
-            input_message=input_message,
+            model_name=model_name,
+            message_count=1 if first_human_message else 0,
+            first_human_message=first_human_message,
         )
         self.session.add(row)
         await self.session.flush()
@@ -365,8 +295,30 @@ class AgentRunRepository:
         *,
         from_statuses: set[AgentRunStatus],
         status: AgentRunStatus,
-        result_message: str | None = None,
+        error: str | None = None,
+        message_count: int | None = None,
+        first_human_message: str | None = None,
+        last_ai_message: str | None = None,
     ) -> AgentRun | None:
+        values: dict[str, Any] = {"status": status.value, "updated_at": func.now()}
+        if error is not None:
+            values["error"] = error
+        if message_count is not None:
+            values["message_count"] = message_count
+        if first_human_message is not None:
+            values["first_human_message"] = first_human_message
+        if last_ai_message is not None:
+            values["last_ai_message"] = last_ai_message
+        now = datetime.now(UTC)
+        if status == AgentRunStatus.running:
+            values["started_at"] = now
+        elif status in {
+            AgentRunStatus.completed,
+            AgentRunStatus.needs_clarification,
+            AgentRunStatus.failed,
+            AgentRunStatus.cancelled,
+        }:
+            values["completed_at"] = now
         row = await self.session.scalar(
             update(AgentRunRow)
             .where(
@@ -374,7 +326,7 @@ class AgentRunRepository:
                 AgentRunRow.owner_id == context.user_id,
                 AgentRunRow.status.in_([item.value for item in from_statuses]),
             )
-            .values(status=status.value, result_message=result_message, updated_at=func.now())
+            .values(**values)
             .returning(AgentRunRow)
         )
         return run_from_row(row) if row else None
@@ -457,27 +409,42 @@ class AgentRunEventRepository:
         self,
         context: UserContext,
         *,
+        thread_id: UUID,
         run_id: UUID,
         event_type: str,
         category: AgentRunEventCategory,
         content: str | None = None,
         extension: EventExtensionEnvelope | None = None,
     ) -> AgentRunEvent:
-        run = await self.session.scalar(
-            select(AgentRunRow)
-            .where(AgentRunRow.id == run_id, AgentRunRow.owner_id == context.user_id)
+        locked_thread = await self.session.scalar(
+            select(ConversationThreadRow.id)
+            .where(
+                ConversationThreadRow.id == thread_id,
+                ConversationThreadRow.owner_id == context.user_id,
+            )
             .with_for_update()
         )
+        if locked_thread is None:
+            raise LookupError("Conversation thread not found")
+        run = await self.session.scalar(
+            select(AgentRunRow.id).where(
+                AgentRunRow.id == run_id,
+                AgentRunRow.owner_id == context.user_id,
+                AgentRunRow.thread_id == thread_id,
+            )
+        )
         if run is None:
-            raise LookupError("Agent run not found")
+            raise LookupError("Agent run not found for thread")
         next_seq = (
             await self.session.scalar(
                 select(func.coalesce(func.max(AgentRunEventRow.seq), 0)).where(
-                    AgentRunEventRow.run_id == run_id
+                    AgentRunEventRow.thread_id == thread_id
                 )
             )
         ) + 1
         row = AgentRunEventRow(
+            owner_id=context.user_id,
+            thread_id=thread_id,
             run_id=run_id,
             seq=next_seq,
             event_type=event_type,
@@ -489,6 +456,57 @@ class AgentRunEventRepository:
         await self.session.flush()
         await self.session.refresh(row)
         return event_from_row(row)
+
+    async def append_message_once(
+        self,
+        context: UserContext,
+        *,
+        thread_id: UUID,
+        run_id: UUID,
+        role: ConversationRole,
+        content: str,
+        extension: EventExtensionEnvelope | None = None,
+    ) -> AgentRunEvent:
+        event_type = _message_event_type(role)
+        existing = await self._get_event_row(context, run_id, event_type)
+        if existing is not None:
+            if role == ConversationRole.assistant:
+                if content:
+                    existing.content = content
+                if extension is not None:
+                    existing.extension = extension.model_dump(mode="json")
+                await self.session.flush()
+                await self.session.refresh(existing)
+            return event_from_row(existing)
+        return await self.append(
+            context,
+            thread_id=thread_id,
+            run_id=run_id,
+            event_type=event_type,
+            category=AgentRunEventCategory.message,
+            content=content,
+            extension=extension,
+        )
+
+    async def append_execution_input_once(
+        self,
+        context: UserContext,
+        *,
+        thread_id: UUID,
+        run_id: UUID,
+        content: str,
+    ) -> AgentRunEvent:
+        existing = await self._get_event_row(context, run_id, "agent.input")
+        if existing is not None:
+            return event_from_row(existing)
+        return await self.append(
+            context,
+            thread_id=thread_id,
+            run_id=run_id,
+            event_type="agent.input",
+            category=AgentRunEventCategory.model,
+            content=content,
+        )
 
     async def list_for_run(
         self,
@@ -511,6 +529,95 @@ class AgentRunEventRepository:
             .order_by(AgentRunEventRow.seq.asc())
         )
         return [event_from_row(row) for row in rows]
+
+    async def get_message_for_run(
+        self,
+        context: UserContext,
+        run_id: UUID,
+        role: ConversationRole,
+    ) -> AgentRunEvent | None:
+        row = await self._get_event_row(context, run_id, _message_event_type(role))
+        return event_from_row(row) if row else None
+
+    async def get_execution_input_for_run(
+        self,
+        context: UserContext,
+        run_id: UUID,
+    ) -> AgentRunEvent | None:
+        row = await self._get_event_row(context, run_id, "agent.input")
+        return event_from_row(row) if row else None
+
+    async def list_messages_for_thread(
+        self,
+        context: UserContext,
+        thread_id: UUID,
+    ) -> list[AgentRunEvent]:
+        rows = await self.session.scalars(
+            select(AgentRunEventRow)
+            .where(
+                AgentRunEventRow.owner_id == context.user_id,
+                AgentRunEventRow.thread_id == thread_id,
+                AgentRunEventRow.category == AgentRunEventCategory.message.value,
+            )
+            .order_by(AgentRunEventRow.seq.asc())
+        )
+        return [event_from_row(row) for row in rows]
+
+    async def list_message_page_for_thread(
+        self,
+        context: UserContext,
+        thread_id: UUID,
+        *,
+        before: UUID | None,
+        limit: int,
+    ) -> tuple[list[AgentRunEvent], UUID | None]:
+        statement = select(AgentRunEventRow).where(
+            AgentRunEventRow.owner_id == context.user_id,
+            AgentRunEventRow.thread_id == thread_id,
+            AgentRunEventRow.category == AgentRunEventCategory.message.value,
+        )
+        if before is not None:
+            cursor = await self.session.scalar(
+                select(AgentRunEventRow).where(
+                    AgentRunEventRow.id == before,
+                    AgentRunEventRow.owner_id == context.user_id,
+                    AgentRunEventRow.thread_id == thread_id,
+                    AgentRunEventRow.category == AgentRunEventCategory.message.value,
+                )
+            )
+            if cursor is None:
+                raise LookupError("Conversation message cursor not found")
+            statement = statement.where(AgentRunEventRow.seq < cursor.seq)
+        rows = list(
+            await self.session.scalars(
+                statement.order_by(AgentRunEventRow.seq.desc()).limit(limit + 1)
+            )
+        )
+        has_more = len(rows) > limit
+        page = rows[:limit]
+        page.reverse()
+        return [event_from_row(row) for row in page], page[0].id if has_more else None
+
+    async def _get_event_row(
+        self,
+        context: UserContext,
+        run_id: UUID,
+        event_type: str,
+    ) -> AgentRunEventRow | None:
+        return await self.session.scalar(
+            select(AgentRunEventRow).where(
+                AgentRunEventRow.owner_id == context.user_id,
+                AgentRunEventRow.run_id == run_id,
+                AgentRunEventRow.event_type == event_type,
+            )
+        )
+
+
+def _message_event_type(role: ConversationRole) -> str:
+    return {
+        ConversationRole.user: "message.human",
+        ConversationRole.assistant: "message.ai",
+    }[role]
 
 
 class IdempotencyRepository:

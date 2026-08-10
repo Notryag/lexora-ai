@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Annotated
 
 from agent_platform.core import UserContext
+from fastapi import Depends, Request
+from north import CheckpointerConfig, make_checkpointer
 
 from lexora_ai.application import (
     AnalyzeCaseService,
@@ -24,9 +27,26 @@ from lexora_ai.infrastructure import (
 from lexora_ai.infrastructure.material_parser import parse_material_file
 
 
-@lru_cache(maxsize=1)
-def get_north_gateway() -> NorthCaseAnalysisGateway:
-    return NorthCaseAnalysisGateway(get_settings())
+async def get_north_gateway(request: Request) -> NorthCaseAnalysisGateway:
+    existing = getattr(request.app.state, "north_gateway", None)
+    if existing is not None:
+        return existing
+    async with request.app.state.north_gateway_lock:
+        existing = getattr(request.app.state, "north_gateway", None)
+        if existing is not None:
+            return existing
+        settings = get_settings()
+        manager = make_checkpointer(
+            CheckpointerConfig(
+                backend=settings.agent_checkpointer_backend,
+                connection_string=settings.checkpointer_connection_string,
+            )
+        )
+        checkpointer = await manager.__aenter__()
+        gateway = NorthCaseAnalysisGateway(settings, checkpointer=checkpointer)
+        request.app.state.checkpointer_manager = manager
+        request.app.state.north_gateway = gateway
+        return gateway
 
 
 @lru_cache(maxsize=1)
@@ -62,14 +82,16 @@ def get_personal_user_context() -> UserContext:
     )
 
 
-@lru_cache(maxsize=1)
-def get_analyze_case_service() -> AnalyzeCaseService:
-    return AnalyzeCaseService(get_north_gateway())
+def get_analyze_case_service(
+    gateway: Annotated[NorthCaseAnalysisGateway, Depends(get_north_gateway)],
+) -> AnalyzeCaseService:
+    return AnalyzeCaseService(gateway)
 
 
-@lru_cache(maxsize=1)
-def get_legal_conversation_service() -> LegalConversationService:
-    return LegalConversationService(get_north_gateway())
+def get_legal_conversation_service(
+    gateway: Annotated[NorthCaseAnalysisGateway, Depends(get_north_gateway)],
+) -> LegalConversationService:
+    return LegalConversationService(gateway)
 
 
 @lru_cache(maxsize=1)
@@ -97,12 +119,13 @@ def get_case_run_service() -> CaseRunService:
     return CaseRunService(get_session_factory(), get_personal_user_context())
 
 
-@lru_cache(maxsize=1)
-def get_persistent_conversation_service() -> PersistentLegalConversationService:
+def get_persistent_conversation_service(
+    gateway: Annotated[NorthCaseAnalysisGateway, Depends(get_north_gateway)],
+) -> PersistentLegalConversationService:
     return PersistentLegalConversationService(
         get_session_factory(),
         get_personal_user_context(),
-        get_north_gateway(),
+        gateway,
         get_embedding_gateway(),
         get_legal_knowledge_port(),
         get_case_law_knowledge_port(),

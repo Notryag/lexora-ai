@@ -37,6 +37,11 @@ docker compose ps
 API 容器启动时自动执行 `alembic upgrade head`。不要再额外启动宿主机 FastAPI 或 Next.js
 进程。Compose 使用 `restart: unless-stopped` 在 Docker 或服务器重启后恢复服务。
 
+首次对话请求会初始化 North 官方 PostgreSQL Checkpointer。`checkpoints`、
+`checkpoint_blobs`、`checkpoint_writes` 和 `checkpoint_migrations` 由 North/LangGraph 管理，
+Lexora Alembic 只管理 Thread、Run、事件和法律业务表。应用 Run 与 checkpoint 共用数据库，
+但职责和迁移所有权相互独立。
+
 ## 验证
 
 ```bash

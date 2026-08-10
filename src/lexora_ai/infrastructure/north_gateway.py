@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from north import (
     AppClient,
     AppConfig,
@@ -41,8 +41,9 @@ class ModelNotConfiguredError(RuntimeError):
 
 
 class NorthCaseAnalysisGateway:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, checkpointer=None) -> None:
         self._settings = settings
+        self._checkpointer = checkpointer
         self._client: AppClient | None = None
 
     async def analyze(
@@ -67,6 +68,9 @@ class NorthCaseAnalysisGateway:
         request: ConversationTurnRequest,
         *,
         thread_id: UUID,
+        run_id: UUID | None = None,
+        checkpoint_ns: str | None = None,
+        checkpoint_id: str | None = None,
         history: tuple[ConversationContextMessage, ...] = (),
         evidence: tuple[ConversationEvidenceChunk, ...] | None = None,
         legal_authorities: tuple[ConversationLegalChunk, ...] = (),
@@ -77,6 +81,9 @@ class NorthCaseAnalysisGateway:
         return await self._run_conversation(
             request,
             thread_id=thread_id,
+            run_id=run_id,
+            checkpoint_ns=checkpoint_ns,
+            checkpoint_id=checkpoint_id,
             on_text_delta=lambda _delta: None,
             history=history,
             evidence=evidence,
@@ -91,6 +98,9 @@ class NorthCaseAnalysisGateway:
         request: ConversationTurnRequest,
         *,
         thread_id: UUID,
+        run_id: UUID | None = None,
+        checkpoint_ns: str | None = None,
+        checkpoint_id: str | None = None,
         on_text_delta: Callable[[str], None],
         history: tuple[ConversationContextMessage, ...] = (),
         evidence: tuple[ConversationEvidenceChunk, ...] | None = None,
@@ -102,6 +112,9 @@ class NorthCaseAnalysisGateway:
         return await self._run_conversation(
             request,
             thread_id=thread_id,
+            run_id=run_id,
+            checkpoint_ns=checkpoint_ns,
+            checkpoint_id=checkpoint_id,
             on_text_delta=on_text_delta,
             history=history,
             evidence=evidence,
@@ -116,6 +129,9 @@ class NorthCaseAnalysisGateway:
         request: ConversationTurnRequest,
         *,
         thread_id: UUID,
+        run_id: UUID | None,
+        checkpoint_ns: str | None,
+        checkpoint_id: str | None,
         on_text_delta: Callable[[str], None],
         history: tuple[ConversationContextMessage, ...],
         evidence: tuple[ConversationEvidenceChunk, ...] | None,
@@ -126,16 +142,20 @@ class NorthCaseAnalysisGateway:
     ) -> GeneratedConversationTurn:
         prompt = build_conversation_prompt(
             request,
-            history=history,
+            history=(),
             evidence=evidence,
             legal_authorities=legal_authorities,
             case_law_authorities=case_law_authorities,
             retrieval_available=retrieval is not None,
             case_memory_available=case_memory is not None,
         )
-        run_id = str(thread_id)
+        resolved_thread_id = str(thread_id)
+        resolved_run_id = str(run_id or thread_id)
         manager = RunManager()
-        record = manager.create(thread_id=run_id, run_id=run_id)
+        record = manager.create(
+            thread_id=resolved_thread_id,
+            run_id=resolved_run_id,
+        )
 
         async def observe(event: RuntimeStreamEvent) -> None:
             if event.mode != "messages" or event.namespace:
@@ -144,25 +164,73 @@ class NorthCaseAnalysisGateway:
             if delta:
                 on_text_delta(delta)
 
+        graph_messages = []
+        if checkpoint_id is None:
+            graph_messages.extend(
+                AIMessage(content=message.content)
+                if message.role == "assistant"
+                else HumanMessage(content=message.content)
+                for message in history
+            )
+        graph_messages.append(HumanMessage(content=prompt))
+        resolved_checkpoint_ns = checkpoint_ns or resolved_run_id
+        configurable = {
+            "thread_id": resolved_thread_id,
+            "checkpoint_ns": resolved_checkpoint_ns,
+        }
+        if checkpoint_id is not None:
+            configurable["checkpoint_id"] = checkpoint_id
         result = await RunExecutor(MemoryStreamBridge(), manager).execute(
             record,
             agent_factory=lambda: build_agent(
                 self._get_config(),
                 tools=build_lexora_tools(retrieval, case_memory),
+                checkpointer=self._checkpointer,
             ),
-            graph_input={"messages": [HumanMessage(content=prompt)]},
+            graph_input={"messages": graph_messages},
             config={
-                "configurable": {"thread_id": run_id},
+                "configurable": configurable,
                 "recursion_limit": self._get_config().recursion_limit,
             },
-            context={"thread_id": run_id, "run_id": run_id},
+            context={"thread_id": resolved_thread_id, "run_id": resolved_run_id},
             stream_observer=observe,
             publish_modes=(),
         )
         content = _final_assistant_text(result.values)
         if not content:
             raise RuntimeError("North did not return an assistant message")
-        return GeneratedConversationTurn(content=content, runtime_thread_id=run_id)
+        return GeneratedConversationTurn(
+            content=content,
+            runtime_thread_id=resolved_thread_id,
+            runtime_checkpoint_ns=resolved_checkpoint_ns,
+            runtime_checkpoint_id=await self._latest_checkpoint_id(
+                resolved_thread_id,
+                resolved_checkpoint_ns,
+            ),
+        )
+
+    async def _latest_checkpoint_id(
+        self,
+        thread_id: str,
+        checkpoint_ns: str,
+    ) -> str | None:
+        if self._checkpointer is None:
+            return None
+        checkpoint = await self._checkpointer.aget_tuple(
+            {
+                "configurable": {
+                    "thread_id": thread_id,
+                    "checkpoint_ns": checkpoint_ns,
+                }
+            }
+        )
+        if checkpoint is None:
+            raise RuntimeError("North completed without persisting a checkpoint")
+        configurable = checkpoint.config.get("configurable", {})
+        checkpoint_id = configurable.get("checkpoint_id")
+        if not isinstance(checkpoint_id, str) or not checkpoint_id:
+            raise RuntimeError("Persisted checkpoint has no checkpoint_id")
+        return checkpoint_id
 
     def _get_config(self) -> AppConfig:
         client = self._get_client()

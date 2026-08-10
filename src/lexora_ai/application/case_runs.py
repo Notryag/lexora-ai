@@ -18,8 +18,13 @@ def _run_status(run, *, status: CaseRunStatus | None = None) -> CaseRun:
     return CaseRun(
         run_id=run.id,
         status=status or CaseRunStatus(run.status.value),
-        input_message=run.input_message,
-        result_message=run.result_message,
+        model_name=run.model_name,
+        error=run.error,
+        message_count=run.message_count,
+        first_human_message=run.first_human_message,
+        last_ai_message=run.last_ai_message,
+        started_at=run.started_at,
+        completed_at=run.completed_at,
         created_at=run.created_at,
         updated_at=run.updated_at,
     )

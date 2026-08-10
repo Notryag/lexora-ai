@@ -11,7 +11,7 @@ dependencies = [
     "docx2txt>=0.9,<1.0",
     "fastapi>=0.116.0,<1.0.0",
     "langchain-openai>=1.4.0,<2.0.0",
-    "north",
+    "north[postgres]",
     "pgvector>=0.3.0,<1.0.0",
     "pypdf>=5.8.0,<7.0.0",
     "pyyaml>=6.0.2,<7.0.0",

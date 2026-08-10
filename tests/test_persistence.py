@@ -56,6 +56,9 @@ class RecordingGateway:
         request: ConversationTurnRequest,
         *,
         thread_id,
+        run_id=None,
+        checkpoint_ns=None,
+        checkpoint_id=None,
         history: tuple[ConversationContextMessage, ...] = (),
         evidence: tuple[ConversationEvidenceChunk, ...] | None = None,
         legal_authorities: tuple[ConversationLegalChunk, ...] = (),
@@ -63,6 +66,7 @@ class RecordingGateway:
         retrieval=None,
         case_memory=None,
     ) -> GeneratedConversationTurn:
+        del run_id, checkpoint_ns, checkpoint_id
         if retrieval is not None:
             evidence = await retrieval.search_materials(request.message)
             legal_authorities = await retrieval.search_legal_authorities(request.message)
@@ -89,6 +93,9 @@ class RecordingGateway:
         request: ConversationTurnRequest,
         *,
         thread_id,
+        run_id=None,
+        checkpoint_ns=None,
+        checkpoint_id=None,
         on_text_delta,
         history: tuple[ConversationContextMessage, ...] = (),
         evidence: tuple[ConversationEvidenceChunk, ...] | None = None,
@@ -100,6 +107,9 @@ class RecordingGateway:
         result = await self.converse(
             request,
             thread_id=thread_id,
+            run_id=run_id,
+            checkpoint_ns=checkpoint_ns,
+            checkpoint_id=checkpoint_id,
             history=history,
             evidence=evidence,
             legal_authorities=legal_authorities,
@@ -110,6 +120,52 @@ class RecordingGateway:
         on_text_delta("已记录：")
         on_text_delta(f"{request.message} [M1:C1]")
         return result
+
+
+class CheckpointRecordingGateway:
+    def __init__(self) -> None:
+        self.thread_ids = []
+        self.run_ids = []
+        self.checkpoint_namespaces = []
+        self.checkpoint_ids = []
+        self.histories = []
+
+    async def converse(
+        self,
+        request,
+        *,
+        thread_id,
+        run_id,
+        checkpoint_ns,
+        checkpoint_id,
+        history=(),
+        **kwargs,
+    ):
+        del request, kwargs
+        self.thread_ids.append(thread_id)
+        self.run_ids.append(run_id)
+        self.checkpoint_namespaces.append(checkpoint_ns)
+        self.checkpoint_ids.append(checkpoint_id)
+        self.histories.append(history)
+        next_checkpoint_id = f"checkpoint-{len(self.run_ids)}"
+        return GeneratedConversationTurn(
+            content="已记录，请继续。",
+            runtime_thread_id=str(thread_id),
+            runtime_checkpoint_ns=checkpoint_ns,
+            runtime_checkpoint_id=next_checkpoint_id,
+        )
+
+
+class FailOnceCheckpointGateway(CheckpointRecordingGateway):
+    async def converse(self, request, **kwargs):
+        if not self.run_ids:
+            self.thread_ids.append(kwargs["thread_id"])
+            self.run_ids.append(kwargs["run_id"])
+            self.checkpoint_namespaces.append(kwargs["checkpoint_ns"])
+            self.checkpoint_ids.append(kwargs["checkpoint_id"])
+            self.histories.append(kwargs.get("history", ()))
+            raise RuntimeError("provider failed after a partial checkpoint")
+        return await super().converse(request, **kwargs)
 
 
 class SemanticEmbeddingGateway:
@@ -230,6 +286,74 @@ async def test_persisted_case_material_and_conversation_round_trip(session_facto
     assert gateway.histories[1][0].content == "公司拖欠工资怎么办？"
     assert [chunk.reference for chunk in gateway.evidence[0]] == ["M1:C1"]
     assert gateway.requests[0].case_profile == case.profile
+
+
+@pytest.mark.asyncio
+async def test_successful_checkpoint_advances_thread_without_replaying_history(
+    session_factory,
+) -> None:
+    context = UserContext(
+        user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        timezone="Asia/Shanghai",
+        locale="zh-CN",
+    )
+    workspace = CaseWorkspaceService(session_factory, context, parse_material_file)
+    gateway = CheckpointRecordingGateway()
+    conversation = PersistentLegalConversationService(session_factory, context, gateway)
+    case = await workspace.create_case(LegalCaseCreate(title="连续对话案件"))
+
+    first = await conversation.execute(
+        case.id,
+        CaseConversationTurnRequest(message="第一轮情况"),
+    )
+    second = await conversation.execute(
+        case.id,
+        CaseConversationTurnRequest(message="第二轮补充"),
+    )
+
+    assert first.thread_id == second.thread_id
+    assert first.run_id != second.run_id
+    assert gateway.thread_ids == [first.thread_id, first.thread_id]
+    assert gateway.run_ids == [first.run_id, second.run_id]
+    assert gateway.checkpoint_namespaces == [str(first.run_id), str(first.run_id)]
+    assert gateway.checkpoint_ids == [None, "checkpoint-1"]
+    assert gateway.histories == [(), ()]
+    async with session_factory() as session:
+        unit_of_work = LexoraUnitOfWork(session)
+        assert await unit_of_work.threads.get_runtime_checkpoint_id(
+            context,
+            first.thread_id,
+        ) == "checkpoint-2"
+
+
+@pytest.mark.asyncio
+async def test_failed_first_run_does_not_become_the_next_checkpoint_baseline(
+    session_factory,
+) -> None:
+    context = UserContext(
+        user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        timezone="Asia/Shanghai",
+        locale="zh-CN",
+    )
+    workspace = CaseWorkspaceService(session_factory, context, parse_material_file)
+    gateway = FailOnceCheckpointGateway()
+    conversation = PersistentLegalConversationService(session_factory, context, gateway)
+    case = await workspace.create_case(LegalCaseCreate(title="失败恢复案件"))
+
+    with pytest.raises(RuntimeError, match="partial checkpoint"):
+        await conversation.execute(
+            case.id,
+            CaseConversationTurnRequest(message="第一轮失败"),
+        )
+    recovered = await conversation.execute(
+        case.id,
+        CaseConversationTurnRequest(message="重新开始"),
+    )
+
+    assert gateway.checkpoint_ids == [None, None]
+    assert gateway.checkpoint_namespaces[0] == str(gateway.run_ids[0])
+    assert gateway.checkpoint_namespaces[1] == str(recovered.run_id)
+    assert gateway.checkpoint_namespaces[0] != gateway.checkpoint_namespaces[1]
 
 
 @pytest.mark.asyncio
@@ -478,7 +602,7 @@ async def test_case_run_can_be_cancelled_and_remains_visible(session_factory) ->
         )
         run = await AgentRunService(unit_of_work).create_run(
             context,
-            input_message="测试取消",
+            first_human_message="测试取消",
             thread_id=thread.id,
         )
         await unit_of_work.commit()

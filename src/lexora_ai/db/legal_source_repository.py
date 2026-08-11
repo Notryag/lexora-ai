@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from hashlib import sha256
 from uuid import UUID
 
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from lexora_ai.db.models import LegalSourceChunkRow, LegalSourceRow
 from lexora_ai.domain import (
@@ -149,14 +151,30 @@ class LegalSourceRepository:
             content=row.content,
         )
 
-    async def list_effective_chunks(self) -> list[LegalKnowledgeChunk]:
-        rows = await self.session.execute(
+    async def list_effective_chunks(
+        self,
+        *,
+        include_embeddings: bool = True,
+        chunk_ids: Sequence[UUID] | None = None,
+        limit: int | None = None,
+    ) -> list[LegalKnowledgeChunk]:
+        if (chunk_ids is not None and not chunk_ids) or (limit is not None and limit <= 0):
+            return []
+        query = (
             select(LegalSourceChunkRow, LegalSourceRow)
             .join(LegalSourceRow, LegalSourceRow.id == LegalSourceChunkRow.source_id)
             .where(LegalSourceRow.status == LegalSourceStatus.effective.value)
             .where(LegalSourceRow.review_status == LegalSourceReviewStatus.approved.value)
             .order_by(LegalSourceRow.title.asc(), LegalSourceChunkRow.chunk_index.asc())
         )
+        if chunk_ids is not None:
+            query = query.where(LegalSourceChunkRow.id.in_(chunk_ids))
+        query = query.options(defer(LegalSourceRow.content))
+        if not include_embeddings:
+            query = query.options(defer(LegalSourceChunkRow.embedding))
+        if limit is not None:
+            query = query.limit(limit)
+        rows = await self.session.execute(query)
         return [
             LegalKnowledgeChunk(
                 id=chunk.id,
@@ -169,11 +187,37 @@ class LegalSourceRepository:
                 source_url=source.source_url,
                 status=source.status,
                 content=chunk.content,
-                embedding=(list(chunk.embedding) if chunk.embedding is not None else None),
+                embedding=(
+                    list(chunk.embedding)
+                    if include_embeddings and chunk.embedding is not None
+                    else None
+                ),
                 embedding_model=chunk.embedding_model,
             )
             for chunk, source in rows
         ]
+
+    async def list_effective_vector_candidate_ids(
+        self,
+        query_embedding: tuple[float, ...],
+        embedding_model: str,
+        *,
+        limit: int,
+    ) -> list[UUID]:
+        if not query_embedding or limit <= 0:
+            return []
+        distance = LegalSourceChunkRow.embedding.cosine_distance(list(query_embedding))
+        rows = await self.session.scalars(
+            select(LegalSourceChunkRow.id)
+            .join(LegalSourceRow, LegalSourceRow.id == LegalSourceChunkRow.source_id)
+            .where(LegalSourceRow.status == LegalSourceStatus.effective.value)
+            .where(LegalSourceRow.review_status == LegalSourceReviewStatus.approved.value)
+            .where(LegalSourceChunkRow.embedding.is_not(None))
+            .where(LegalSourceChunkRow.embedding_model == embedding_model)
+            .order_by(distance, LegalSourceChunkRow.id)
+            .limit(limit)
+        )
+        return list(rows)
 
     async def list_embedding_candidates(
         self,

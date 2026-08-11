@@ -6,6 +6,7 @@ from uuid import UUID
 import pytest
 from agent_platform.application import AgentRunService
 from agent_platform.core import UserContext
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -531,6 +532,84 @@ async def test_approved_legal_source_embeddings_can_be_backfilled(session_factor
     assert first_count == 2
     assert second_count == 0
     assert chunks[0].article_label == "第二条"
+
+
+@pytest.mark.asyncio
+async def test_lightweight_legal_chunk_query_excludes_bulk_columns(session_factory) -> None:
+    legal_sources = LegalSourceService(session_factory)
+    await legal_sources.create(
+        LegalSourceCreate(
+            title="中华人民共和国测试法",
+            kind=LegalSourceKind.law,
+            issuing_authority="全国人民代表大会常务委员会",
+            status=LegalSourceStatus.effective,
+            source_name="国家法律法规数据库",
+            source_url="https://flk.npc.gov.cn/detail?id=bounded-query-test",
+            content="第一条 测试内容。",
+        )
+    )
+    await LegalSourceService(
+        session_factory,
+        SemanticEmbeddingGateway(),
+    ).backfill_embeddings(batch_size=10)
+    statements: list[str] = []
+
+    def record_statement(connection, cursor, statement, parameters, context, executemany):
+        del connection, cursor, parameters, context, executemany
+        statements.append(statement)
+
+    engine = session_factory.kw["bind"]
+    event.listen(engine.sync_engine, "before_cursor_execute", record_statement)
+    try:
+        async with session_factory() as session:
+            chunks = await LexoraUnitOfWork(session).legal_sources.list_effective_chunks(
+                include_embeddings=False
+            )
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", record_statement)
+
+    select_sql = next(statement for statement in statements if "legal_source_chunks" in statement)
+    assert "legal_source_chunks.embedding," not in select_sql
+    assert "legal_sources.content," not in select_sql
+    assert chunks[0].embedding is None
+
+
+@pytest.mark.asyncio
+async def test_lightweight_case_law_query_excludes_bulk_columns(session_factory) -> None:
+    sources = CaseLawSourceService(session_factory)
+    await sources.create(
+        CaseLawSourceCreate(
+            case_number="指导案例测试号",
+            title="测试劳动争议案",
+            keywords=["劳动关系"],
+            issuing_authority="最高人民法院",
+            source_name="最高人民法院指导性案例",
+            source_url="https://www.court.gov.cn/test/bounded-query",
+            content="裁判要点\n根据用工事实判断劳动关系。",
+            review_status=LegalSourceReviewStatus.approved,
+        )
+    )
+    statements: list[str] = []
+
+    def record_statement(connection, cursor, statement, parameters, context, executemany):
+        del connection, cursor, parameters, context, executemany
+        statements.append(statement)
+
+    engine = session_factory.kw["bind"]
+    event.listen(engine.sync_engine, "before_cursor_execute", record_statement)
+    try:
+        chunks = await DatabaseCaseLawKnowledgePort(session_factory).search(
+            "劳动关系",
+            query_embedding=None,
+            embedding_model=None,
+        )
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", record_statement)
+
+    select_sql = next(statement for statement in statements if "case_law_chunks" in statement)
+    assert "case_law_chunks.embedding," not in select_sql
+    assert "case_law_sources.content," not in select_sql
+    assert chunks[0].embedding is None
 
 
 @pytest.mark.asyncio

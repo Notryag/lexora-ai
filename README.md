@@ -46,9 +46,9 @@ Lexora 通过连续对话理解用户描述的情况，并将案件背景、当�
 Query、OpenAPI 类型生成和语义设计 Token，但不导入 Dayboard 业务组件。
 
 ```bash
-docker compose config --quiet
-docker compose build api web
-docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.build.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.build.yml build api web
+docker compose up -d --no-build
 docker compose ps
 ```
 

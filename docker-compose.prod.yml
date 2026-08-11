@@ -1,0 +1,6 @@
+services:
+  api:
+    image: ${LEXORA_API_IMAGE:?set LEXORA_API_IMAGE to a published image tag or digest}
+
+  web:
+    image: ${LEXORA_WEB_IMAGE:?set LEXORA_WEB_IMAGE to a published image tag or digest}

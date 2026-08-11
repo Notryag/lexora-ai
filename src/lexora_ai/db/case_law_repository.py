@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from hashlib import sha256
 from uuid import UUID
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from lexora_ai.case_law_context import CaseLawChunkDraft
 from lexora_ai.db.models import CaseLawChunkRow, CaseLawSourceRow
@@ -134,14 +136,30 @@ class CaseLawRepository:
             content=row.content,
         )
 
-    async def list_approved_chunks(self) -> list[CaseLawChunk]:
-        rows = await self.session.execute(
+    async def list_approved_chunks(
+        self,
+        *,
+        include_embeddings: bool = True,
+        chunk_ids: Sequence[UUID] | None = None,
+        limit: int | None = None,
+    ) -> list[CaseLawChunk]:
+        if (chunk_ids is not None and not chunk_ids) or (limit is not None and limit <= 0):
+            return []
+        query = (
             select(CaseLawChunkRow, CaseLawSourceRow)
             .join(CaseLawSourceRow, CaseLawSourceRow.id == CaseLawChunkRow.source_id)
             .where(CaseLawSourceRow.status == CaseLawStatus.active.value)
             .where(CaseLawSourceRow.review_status == LegalSourceReviewStatus.approved.value)
             .order_by(CaseLawSourceRow.case_number.asc(), CaseLawChunkRow.chunk_index.asc())
         )
+        if chunk_ids is not None:
+            query = query.where(CaseLawChunkRow.id.in_(chunk_ids))
+        query = query.options(defer(CaseLawSourceRow.content))
+        if not include_embeddings:
+            query = query.options(defer(CaseLawChunkRow.embedding))
+        if limit is not None:
+            query = query.limit(limit)
+        rows = await self.session.execute(query)
         return [
             CaseLawChunk(
                 id=chunk.id,
@@ -155,11 +173,37 @@ class CaseLawRepository:
                 source_url=source.source_url,
                 published_on=source.published_on,
                 content=chunk.content,
-                embedding=(list(chunk.embedding) if chunk.embedding is not None else None),
+                embedding=(
+                    list(chunk.embedding)
+                    if include_embeddings and chunk.embedding is not None
+                    else None
+                ),
                 embedding_model=chunk.embedding_model,
             )
             for chunk, source in rows
         ]
+
+    async def list_approved_vector_candidate_ids(
+        self,
+        query_embedding: tuple[float, ...],
+        embedding_model: str,
+        *,
+        limit: int,
+    ) -> list[UUID]:
+        if not query_embedding or limit <= 0:
+            return []
+        distance = CaseLawChunkRow.embedding.cosine_distance(list(query_embedding))
+        rows = await self.session.scalars(
+            select(CaseLawChunkRow.id)
+            .join(CaseLawSourceRow, CaseLawSourceRow.id == CaseLawChunkRow.source_id)
+            .where(CaseLawSourceRow.status == CaseLawStatus.active.value)
+            .where(CaseLawSourceRow.review_status == LegalSourceReviewStatus.approved.value)
+            .where(CaseLawChunkRow.embedding.is_not(None))
+            .where(CaseLawChunkRow.embedding_model == embedding_model)
+            .order_by(distance, CaseLawChunkRow.id)
+            .limit(limit)
+        )
+        return list(rows)
 
     async def list_embedding_candidates(self, embedding_model: str) -> list[tuple[UUID, str]]:
         rows = await self.session.execute(

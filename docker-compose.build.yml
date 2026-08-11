@@ -1,0 +1,15 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      additional_contexts:
+        agent-platform: ../dayboard/packages/agent-platform
+        rag-core: ../rag-core
+
+  web:
+    build:
+      context: apps/web
+      dockerfile: Dockerfile
+      args:
+        LEXORA_API_URL: http://api:8011

@@ -382,6 +382,33 @@ export interface components {
             profile_updated: boolean;
             case_profile?: components["schemas"]["CaseProfile"];
         };
+        /** CaseFactor */
+        CaseFactor: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            type: components["schemas"]["FactorType"];
+            /** @default unknown */
+            state: components["schemas"]["FactorState"];
+            /** Value */
+            value?: boolean | number | string | null;
+            /** @default medium */
+            materiality: components["schemas"]["FactorMateriality"];
+            /** Question */
+            question?: string | null;
+            /** Source Turns */
+            source_turns?: number[];
+            /** Source Material Refs */
+            source_material_refs?: string[];
+        };
+        /** CaseFactorProfile */
+        CaseFactorProfile: {
+            /** Active Domains */
+            active_domains?: string[];
+            /** Factors */
+            factors?: components["schemas"]["CaseFactor"][];
+        };
         /** CaseLawCitation */
         CaseLawCitation: {
             /** Reference */
@@ -398,6 +425,8 @@ export interface components {
             source_url: string;
             /** Published On */
             published_on: string | null;
+            /** Content */
+            content?: string | null;
         };
         /** CaseMaterial */
         CaseMaterial: {
@@ -431,6 +460,7 @@ export interface components {
             evidence_notes?: string[];
             /** Missing Information */
             missing_information?: string[];
+            factor_profile?: components["schemas"]["CaseFactorProfile"];
         };
         /** CaseProfileUpdate */
         CaseProfileUpdate: {
@@ -448,6 +478,7 @@ export interface components {
             evidence_notes?: string[];
             /** Missing Information */
             missing_information?: string[];
+            factor_profile?: components["schemas"]["CaseFactorProfile"];
         };
         /** CaseRun */
         CaseRun: {
@@ -519,6 +550,21 @@ export interface components {
              */
             disclaimer: string;
         };
+        /**
+         * FactorMateriality
+         * @enum {string}
+         */
+        FactorMateriality: "high" | "medium" | "low";
+        /**
+         * FactorState
+         * @enum {string}
+         */
+        FactorState: "asserted" | "denied" | "unknown" | "conflicting";
+        /**
+         * FactorType
+         * @enum {string}
+         */
+        FactorType: "text" | "numeric" | "boolean" | "categorical";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -583,6 +629,8 @@ export interface components {
             /** Source Url */
             source_url: string;
             status: components["schemas"]["LegalSourceStatus"];
+            /** Content */
+            content?: string | null;
         };
         /** LegalSourceDetail */
         LegalSourceDetail: {

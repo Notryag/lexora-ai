@@ -371,6 +371,7 @@ class PersistentLegalConversationService:
                     issuing_authority=chunk.issuing_authority,
                     source_url=chunk.source_url,
                     status=chunk.status,
+                    content=chunk.content,
                 )
                 for chunk in _cited_chunks(content, retrieval.legal_authorities)
             ]
@@ -383,6 +384,7 @@ class PersistentLegalConversationService:
                     issuing_authority=chunk.issuing_authority,
                     source_url=chunk.source_url,
                     published_on=chunk.published_on,
+                    content=chunk.content,
                 )
                 for chunk in _cited_chunks(content, retrieval.case_law_authorities)
             ]

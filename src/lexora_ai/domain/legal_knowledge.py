@@ -130,3 +130,4 @@ class LegalCitation(BaseModel):
     issuing_authority: str
     source_url: str
     status: LegalSourceStatus
+    content: str | None = None

@@ -493,8 +493,11 @@ async def test_effective_legal_source_is_retrieved_and_persisted_with_message(
     assert len(gateway.legal_authorities[0]) == 2
     assert f"[{result.legal_citations[0].reference}]" in result.assistant_message
     assert result.legal_citations[0].title == source.title
+    assert result.legal_citations[0].content
+    assert "劳动报酬" in result.legal_citations[0].content
     assert gateway.legal_authorities[0][0].source_url.startswith("https://flk.npc.gov.cn/")
     assert messages[-1].legal_citations == result.legal_citations
+    assert messages[-1].legal_citations[0].content == result.legal_citations[0].content
 
     await legal_sources.update(source.id, LegalSourceUpdate(status=LegalSourceStatus.repealed))
     after_repeal = await DatabaseLegalKnowledgePort(session_factory).search(
@@ -660,9 +663,12 @@ async def test_approved_case_law_is_retrieved_and_persisted_separately(
     assert len(gateway.case_law_authorities[0]) > 1
     assert f"[{result.case_law_citations[0].reference}]" in result.assistant_message
     assert result.case_law_citations[0].case_number == source.case_number
+    assert result.case_law_citations[0].content
+    assert "劳动关系" in result.case_law_citations[0].content
     assert gateway.case_law_authorities[0]
     assert gateway.case_law_authorities[0][0].source_url == source.source_url
     assert messages[-1].case_law_citations == result.case_law_citations
+    assert messages[-1].case_law_citations[0].content == result.case_law_citations[0].content
     assert messages[-1].legal_citations == []
 
 

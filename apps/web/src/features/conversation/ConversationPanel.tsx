@@ -5,6 +5,7 @@ import {
   BookOpenText,
   ClipboardList,
   CircleCheck,
+  ChevronDown,
   Download,
   ExternalLink,
   Scale,
@@ -153,22 +154,36 @@ export function ConversationPanel({
                       法规依据
                     </div>
                     {legalCitations.map((citation) => (
-                      <a
+                      <details
                         className={styles.legalSource}
-                        href={citation.source_url}
                         key={citation.reference}
-                        rel="noreferrer"
-                        target="_blank"
                       >
-                        <span>
-                          <strong>{citation.title}</strong>
-                          <small>
-                            {citation.article_label ?? "相关条文"} · {citation.issuing_authority}
-                          </small>
-                        </span>
-                        <code>[{markers.get(citation.reference)}]</code>
-                        <ExternalLink aria-hidden="true" size={14} />
-                      </a>
+                        <summary>
+                          <span>
+                            <strong>{citation.title}</strong>
+                            <small>
+                              {citation.article_label ?? "相关条文"} · {citation.issuing_authority}
+                            </small>
+                          </span>
+                          <code>[{markers.get(citation.reference)}]</code>
+                          <ChevronDown
+                            aria-hidden="true"
+                            className={styles.sourceChevron}
+                            size={16}
+                          />
+                        </summary>
+                        <div className={styles.sourceDetails}>
+                          {citation.content ? (
+                            <p className={styles.sourceContent}>{citation.content}</p>
+                          ) : (
+                            <p className={styles.sourceUnavailable}>该历史引用未保存正文。</p>
+                          )}
+                          <a href={citation.source_url} rel="noreferrer" target="_blank">
+                            <ExternalLink aria-hidden="true" size={14} />
+                            查看官方原文
+                          </a>
+                        </div>
+                      </details>
                     ))}
                   </section>
                 ) : null}
@@ -179,22 +194,36 @@ export function ConversationPanel({
                       类案参考
                     </div>
                     {caseLawCitations.map((citation) => (
-                      <a
+                      <details
                         className={styles.legalSource}
-                        href={citation.source_url}
                         key={citation.reference}
-                        rel="noreferrer"
-                        target="_blank"
                       >
-                        <span>
-                          <strong>{citation.case_number} · {citation.title}</strong>
-                          <small>
-                            {citation.section_label} · {citation.issuing_authority}
-                          </small>
-                        </span>
-                        <code>[{markers.get(citation.reference)}]</code>
-                        <ExternalLink aria-hidden="true" size={14} />
-                      </a>
+                        <summary>
+                          <span>
+                            <strong>{citation.case_number} · {citation.title}</strong>
+                            <small>
+                              {citation.section_label} · {citation.issuing_authority}
+                            </small>
+                          </span>
+                          <code>[{markers.get(citation.reference)}]</code>
+                          <ChevronDown
+                            aria-hidden="true"
+                            className={styles.sourceChevron}
+                            size={16}
+                          />
+                        </summary>
+                        <div className={styles.sourceDetails}>
+                          {citation.content ? (
+                            <p className={styles.sourceContent}>{citation.content}</p>
+                          ) : (
+                            <p className={styles.sourceUnavailable}>该历史引用未保存正文。</p>
+                          )}
+                          <a href={citation.source_url} rel="noreferrer" target="_blank">
+                            <ExternalLink aria-hidden="true" size={14} />
+                            查看最高法原文
+                          </a>
+                        </div>
+                      </details>
                     ))}
                   </section>
                 ) : null}

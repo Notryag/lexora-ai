@@ -134,3 +134,4 @@ class CaseLawCitation(BaseModel):
     issuing_authority: str
     source_url: str
     published_on: date | None
+    content: str | None = None

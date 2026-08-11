@@ -22,6 +22,8 @@ from lexora_ai.domain.factor_discovery import (
     FactorDiscoveryCandidate,
     FactorDiscoveryLoadResult,
     FactorDiscoveryPlan,
+    FactorTokenBudgetSnapshot,
+    FactorTokenReservation,
 )
 from lexora_ai.domain.factors import (
     CaseFactor,
@@ -94,6 +96,8 @@ __all__ = [
     "FactorDiscoveryCandidate",
     "FactorDiscoveryLoadResult",
     "FactorDiscoveryPlan",
+    "FactorTokenBudgetSnapshot",
+    "FactorTokenReservation",
     "FactorMateriality",
     "FactorState",
     "FactorType",

@@ -4,7 +4,22 @@ import json
 from pathlib import Path
 
 from lexora_ai.application.factor_discovery import build_factor_discovery_plan
-from lexora_ai.domain import FactorDiscoveryBudget
+from lexora_ai.domain import FactorDiscoveryBudget, FactorTokenBudgetSnapshot
+
+
+def _token_budget(
+    *,
+    limit: int = 100_000_000,
+    consumed: int = 0,
+    reserved: int = 0,
+) -> FactorTokenBudgetSnapshot:
+    return FactorTokenBudgetSnapshot(
+        scope="factor-discovery",
+        limit_tokens=limit,
+        consumed_tokens=consumed,
+        reserved_tokens=reserved,
+        remaining_tokens=limit - consumed - reserved,
+    )
 
 
 def _write_cail_cases(path: Path, count: int = 80) -> None:
@@ -64,6 +79,7 @@ def _plan(
         sampling_seed=42,
         model="test-model",
         budget=budget or _budget(),
+        cumulative_token_budget=_token_budget(),
     )
 
 
@@ -104,6 +120,7 @@ def test_plan_is_deterministic_and_cache_keys_include_model(tmp_path: Path) -> N
         sampling_seed=42,
         model="other-model",
         budget=_budget(),
+        cumulative_token_budget=_token_budget(),
     )
 
     assert first.selected_discovery_ids == second.selected_discovery_ids
@@ -136,6 +153,35 @@ def test_plan_blocks_model_processing_until_license_review_is_approved(tmp_path:
     )
 
 
+def test_plan_counts_input_and_output_against_cumulative_budget(tmp_path: Path) -> None:
+    path = tmp_path / "cases.jsonl"
+    _write_cail_cases(path)
+    budget = _budget(max_output_tokens=1_000)
+
+    baseline = _plan(path, budget)
+    remaining = baseline.estimated_total_tokens - 1
+    plan = build_factor_discovery_plan(
+        path,
+        dataset_format="cail2018",
+        dataset_name="test-cail",
+        dataset_version="fixture-v1",
+        dataset_sha256="a" * 64,
+        license_review_status="approved",
+        issue="盗窃罪",
+        sampling_seed=42,
+        model="test-model",
+        budget=budget,
+        cumulative_token_budget=_token_budget(
+            limit=100_000_000,
+            consumed=100_000_000 - remaining,
+        ),
+    )
+
+    assert plan.estimated_total_tokens == plan.estimated_input_tokens + 1_000
+    assert not plan.within_budget
+    assert "estimated total tokens exceed cumulative remaining tokens" in plan.budget_errors
+
+
 def test_plan_handles_an_issue_with_no_candidates(tmp_path: Path) -> None:
     path = tmp_path / "cases.jsonl"
     _write_cail_cases(path)
@@ -151,6 +197,7 @@ def test_plan_handles_an_issue_with_no_candidates(tmp_path: Path) -> None:
         sampling_seed=42,
         model="test-model",
         budget=_budget(),
+        cumulative_token_budget=_token_budget(),
     )
 
     assert plan.eligible_candidates == 0

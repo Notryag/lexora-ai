@@ -6,12 +6,12 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class FactorDiscoveryBudget(BaseModel):
-    discovery_cases: int = Field(default=120, ge=1, le=1_000)
-    evaluation_cases: int = Field(default=60, ge=1, le=1_000)
-    max_unique_cases: int = Field(default=180, ge=2, le=2_000)
-    max_model_calls: int = Field(default=30, ge=1, le=500)
-    max_input_tokens: int = Field(default=300_000, ge=1_000, le=10_000_000)
-    max_output_tokens: int = Field(default=40_000, ge=1_000, le=2_000_000)
+    discovery_cases: int = Field(default=750, ge=1, le=1_000)
+    evaluation_cases: int = Field(default=200, ge=1, le=1_000)
+    max_unique_cases: int = Field(default=950, ge=2, le=2_000)
+    max_model_calls: int = Field(default=100, ge=1, le=500)
+    max_input_tokens: int = Field(default=10_000_000, ge=1_000, le=10_000_000)
+    max_output_tokens: int = Field(default=1_000_000, ge=1_000, le=2_000_000)
     max_batch_input_tokens: int = Field(default=20_000, ge=1_000, le=100_000)
     max_records_scanned: int = Field(default=50_000, ge=1, le=5_000_000)
     candidate_pool_multiplier: int = Field(default=4, ge=1, le=20)
@@ -52,6 +52,24 @@ class FactorDiscoveryBatch:
 
 
 @dataclass(frozen=True, slots=True)
+class FactorTokenBudgetSnapshot:
+    scope: str
+    limit_tokens: int
+    consumed_tokens: int
+    reserved_tokens: int
+    remaining_tokens: int
+
+
+@dataclass(frozen=True, slots=True)
+class FactorTokenReservation:
+    reservation_key: str
+    estimated_tokens: int
+    status: str
+    outcome: str
+    budget: FactorTokenBudgetSnapshot
+
+
+@dataclass(frozen=True, slots=True)
 class FactorDiscoveryPlan:
     dataset_name: str
     dataset_version: str
@@ -71,6 +89,8 @@ class FactorDiscoveryPlan:
     estimated_model_calls: int
     estimated_input_tokens: int
     reserved_output_tokens: int
+    estimated_total_tokens: int
+    cumulative_token_budget: FactorTokenBudgetSnapshot
     within_budget: bool
     budget_errors: tuple[str, ...]
     execution_ready: bool

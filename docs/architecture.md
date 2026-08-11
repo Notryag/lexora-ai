@@ -268,6 +268,10 @@ versioned `LearnedFactorCatalog` and supplied to online extraction as priors, ne
 One conversation cannot mutate the global catalog. Existing guiding-case ingestion can supply reviewed
 examples, but a representative judgment corpus, provenance controls, discovery evaluation, and a
 publish/reject workflow are required before the catalog may influence production conversations.
+Offline model work uses a persistent project-wide token ledger. Its 100-million-token limit counts
+actual input and output across every discovery run rather than resetting per command. Content-addressed
+batch reservations and case hashes make retries idempotent; completed work must be reused before an
+expanded sample can schedule new work.
 Prototype clustering and quantitative outcome prediction remain deferred until corpus quality and bias
 evaluation justify them. Dataset sources, provenance requirements and the first acquisition plan are
 specified in [Factor Discovery Data](factor-discovery-data.md).

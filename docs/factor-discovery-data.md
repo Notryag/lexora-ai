@@ -18,6 +18,9 @@ evaluate factor schemas, but they are not automatically valid user-facing citati
 | A | [People's Courts Case Database](https://rmfyalk.court.gov.cn/), Supreme People's Court guiding cases, Gazette and officially published typical cases | production retrieval, reviewed factor discovery, schema validation | yes, after source and content review |
 | B | [CAIL2018](https://github.com/china-ai-law-challenge/CAIL2018) | large-scale criminal factor discovery and extraction evaluation | no |
 | B | [LeCaRDv2](https://github.com/THUIR/LeCaRDv2) | criminal case retrieval evaluation, factor relevance and stability checks | no |
+| B | [CAIL2022-LCR](https://github.com/china-ai-law-challenge/CAIL2022) | criminal case retrieval evaluation; query/candidate relevance | no |
+| B | [LeCaRD-Elem](https://aclanthology.org/2024.findings-acl.139/) | legal-element extraction and retrieval-design reference | no |
+| B | [STARD](https://github.com/oneal2000/STARD) | real consultation-to-statute retrieval evaluation | no |
 | C | the synthetic cases in `structured-knowledge-extraction` | pipeline tests and deterministic development fixtures | never |
 
 The People's Courts Case Database is the preferred production source because it contains guiding
@@ -43,10 +46,18 @@ with relevance judgments from multiple criminal-law annotators. It is the better
 case-retrieval evaluation and for checking whether discovered factors improve retrieval. It is not a
 replacement for current official cases.
 
-Both research repositories contain MIT license files for their repository contents. Before storing,
-redistributing or using the downloaded case data outside internal research, the dataset terms and
-underlying judgment-text rights must still receive a separate review. A code-repository license must
-not be assumed to grant every right in the underlying documents.
+Dataset publication year is not judgment recency. For example, inspected CAIL2022-LCR query records
+include 2019 case facts. CAIL2022-LCR and LeCaRDv2 are newer retrieval benchmarks than CAIL2018, but
+they do not establish that their underlying judgments or legal rules are current. LeCaRD-Elem is a
+2024 element-aware retrieval dataset built on LeCaRD, while STARD is a 2024 benchmark containing 1,543
+real non-professional consultation queries and statute relevance labels. These improve factor and
+retrieval evaluation; current-law validation still comes from reviewed official statutes and current
+People's Courts Case Database entries.
+
+Several research repositories contain MIT license files for their repository contents. Before storing,
+redistributing or using downloaded case data outside internal research, the dataset terms and underlying
+judgment-text rights must still receive a separate review. A code-repository license must not be assumed
+to grant every right in the underlying documents.
 
 ## Coverage Decision
 
@@ -142,16 +153,24 @@ by switching the active immutable version.
 
 ## Cost And Sampling Limits
 
-The first experiment is deliberately small and covers one issue only. Its default budget is:
+The first executable experiment still covers one issue only. Its default per-plan budget is:
 
 | Limit | Default |
 |---|---:|
-| discovery sample | 120 cases |
-| held-out evaluation sample | 60 cases |
-| total unique cases sent to an LLM | 180 cases |
-| discovery / merge / extraction model calls | 30 calls |
-| cumulative input tokens | 300,000 tokens |
-| cumulative output tokens | 40,000 tokens |
+| discovery sample | 750 cases |
+| held-out evaluation sample | 200 cases |
+| total unique cases sent to an LLM | 950 cases |
+| discovery / merge / extraction model calls | 100 calls |
+| per-plan input ceiling | 10,000,000 tokens |
+| per-plan output ceiling | 1,000,000 tokens |
+| project-wide input + output ceiling | 100,000,000 tokens |
+
+The 100-million-token ceiling is cumulative across all factor-discovery runs, models, retries and
+stages. It is not recreated for each command. A SQLite ledger at
+`storage/factor-discovery/token-budget.sqlite3` persists settled usage and outstanding reservations.
+Every reservation uses the content-addressed batch cache key as its unique key. Repeating the same
+reservation is idempotent, settling the same provider usage twice does not double count, and reopening
+the ledger cannot change its configured limit. Input and output tokens are added together.
 
 Cases are stratified by the available outcome labels and relevant metadata before sampling. Discovery
 batches are packed by estimated tokens rather than by a fixed document count. Only the fact and
@@ -165,11 +184,14 @@ also be configured as an additional hard limit once the selected model has a ver
 token limits remain authoritative when price metadata is missing or stale.
 
 Every batch result is cached by dataset hash, normalization version, prompt version, model identifier
-and ordered input hashes. A retry or resumed run must reuse completed batches. Increasing a limit
-creates a new run plan and processes only newly selected cases; it never silently restarts the previous
-sample. No automatic schedule may enlarge these budgets.
+and ordered input hashes. Case facts are deduplicated by their full SHA-256 before sampling. A retry or
+resumed run must reuse settled batch keys and their cached results. The future executor must reserve a
+batch before its provider call and settle actual input plus output usage afterward; a settled key must
+never call the provider again. Increasing a limit creates a new run plan, and the executor must filter
+already completed case-stage keys so only new work is sent. No automatic schedule may enlarge these
+budgets.
 
-The initial 120/60 split is an engineering baseline, not a claim of statistical sufficiency. Expansion
+The initial 750/200 split is an engineering baseline, not a claim of statistical sufficiency. Expansion
 requires a recorded comparison showing unstable factors, inadequate coverage, or measurable retrieval
 or conversation gains that justify the additional model cost.
 
@@ -225,6 +247,14 @@ and estimated three future model calls and 7,451 input tokens. Actual model call
 
 The first real bounded acquisition downloaded 6,970,018 compressed bytes from the 984,551,626-byte
 CAIL2018 archive and produced a verified 24,702,198-byte validation JSONL member. A theft dry run scanned
-935 records before reaching its 720-candidate pool, selected the configured 120/60 discovery/evaluation
-split, and estimated seven future model calls with 104,529 input tokens. It remains
-`execution_ready=false` solely because the dataset license review is pending; no model was called.
+17,131 records and found 991 unique eligible cases. The expanded plan selected 750 discovery and 200
+held-out evaluation cases, estimated 32 future model calls, 575,424 input tokens, and a conservative
+1,000,000-token output reserve. Its estimated total is 1,575,424 of the persistent 100,000,000-token
+ceiling. It remains `execution_ready=false` solely because the dataset license review is pending; dry
+planning did not reserve tokens and no model was called.
+
+Three newer evaluation assets are also present locally under ignored storage with commit-pinned source
+manifests: 300 CAIL2022-LCR queries (351,261 bytes), 800 LeCaRDv2 full-context queries (17,066,722
+bytes), and 1,543 STARD consultation queries (1,818,895 bytes). Their combined size is 19,236,878 bytes.
+They remain limited to research planning while license review is pending and are not yet accepted by
+the factor-discovery loader or sent to a model.

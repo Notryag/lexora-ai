@@ -7,6 +7,10 @@ from datetime import datetime, timezone
 from importlib.resources import files
 from pathlib import Path
 
+from lexora_ai.infrastructure.bounded_remote_file import (
+    BoundedRemoteFileConnector,
+    RemoteFileSpec,
+)
 from lexora_ai.infrastructure.bounded_remote_zip import (
     BoundedRemoteZipMemberConnector,
     RemoteZipMemberSpec,
@@ -21,7 +25,10 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _load_spec(dataset_name: str, member_name: str) -> tuple[dict[str, object], RemoteZipMemberSpec]:
+def _load_spec(
+    dataset_name: str,
+    member_name: str,
+) -> tuple[dict[str, object], RemoteZipMemberSpec | RemoteFileSpec, str]:
     resource = files("lexora_ai.resources").joinpath("factor_discovery_datasets.json")
     datasets = json.loads(resource.read_text(encoding="utf-8"))
     dataset = next(
@@ -38,35 +45,54 @@ def _load_spec(dataset_name: str, member_name: str) -> tuple[dict[str, object], 
         (item for item in dataset.get("members", []) if item.get("name") == member_name),
         None,
     )
-    if member is None:
-        raise ValueError(f"unknown dataset member: {member_name}")
-    spec = RemoteZipMemberSpec(
-        source_url=str(dataset["source_url"]),
-        allowed_hostname=str(dataset["allowed_hostname"]),
-        archive_size_bytes=int(dataset["archive_size_bytes"]),
-        source_etag=str(dataset["source_etag"]),
-        member_path=str(member["path"]),
-        local_header_offset=int(member["local_header_offset"]),
-        compression_method=int(member["compression_method"]),
-        crc32=int(str(member["crc32"]), 16),
-        compressed_size=int(member["compressed_size"]),
-        uncompressed_size=int(member["uncompressed_size"]),
+    if member is not None:
+        spec = RemoteZipMemberSpec(
+            source_url=str(dataset["source_url"]),
+            allowed_hostname=str(dataset["allowed_hostname"]),
+            archive_size_bytes=int(dataset["archive_size_bytes"]),
+            source_etag=str(dataset["source_etag"]),
+            member_path=str(member["path"]),
+            local_header_offset=int(member["local_header_offset"]),
+            compression_method=int(member["compression_method"]),
+            crc32=int(str(member["crc32"]), 16),
+            compressed_size=int(member["compressed_size"]),
+            uncompressed_size=int(member["uncompressed_size"]),
+        )
+        return dataset, spec, str(member["path"])
+
+    direct_file = next(
+        (item for item in dataset.get("files", []) if item.get("name") == member_name),
+        None,
     )
-    return dataset, spec
+    if direct_file is None:
+        raise ValueError(f"unknown dataset member: {member_name}")
+    direct_spec = RemoteFileSpec(
+        source_url=str(direct_file["source_url"]),
+        allowed_hostname=str(direct_file["allowed_hostname"]),
+        size_bytes=int(direct_file["size_bytes"]),
+        sha256=str(direct_file["sha256"]),
+    )
+    return dataset, direct_spec, str(direct_file["path"])
 
 
 def run() -> None:
     args = _parser().parse_args()
-    dataset, spec = _load_spec(args.dataset, args.member)
-    result = BoundedRemoteZipMemberConnector().acquire(spec, args.destination)
+    dataset, spec, member_path = _load_spec(args.dataset, args.member)
+    result = (
+        BoundedRemoteZipMemberConnector().acquire(spec, args.destination)
+        if isinstance(spec, RemoteZipMemberSpec)
+        else BoundedRemoteFileConnector().acquire(spec, args.destination)
+    )
     manifest = {
         "dataset": dataset["name"],
         "version": dataset["version"],
         "publisher": dataset["publisher"],
         "source_url": dataset["source_url"],
-        "source_etag": dataset["source_etag"],
+        "artifact_source_url": spec.source_url,
+        "source_etag": dataset.get("source_etag"),
+        "source_revision": dataset["version"],
         "member": args.member,
-        "member_path": spec.member_path,
+        "member_path": member_path,
         "acquired_at": datetime.now(timezone.utc).isoformat(),
         "license_review_status": dataset["license_review_status"],
         "permitted_scopes": dataset["permitted_scopes"],

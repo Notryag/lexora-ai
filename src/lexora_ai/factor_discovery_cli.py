@@ -6,6 +6,7 @@ from pathlib import Path
 
 from lexora_ai.application.factor_discovery import build_factor_discovery_plan
 from lexora_ai.domain.factor_discovery import FactorDiscoveryBudget
+from lexora_ai.infrastructure.factor_discovery_ledger import FactorDiscoveryTokenLedger
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -21,17 +22,23 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--issue", required=True)
     parser.add_argument("--model", default="unconfigured")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--discovery-cases", type=int, default=120)
-    parser.add_argument("--evaluation-cases", type=int, default=60)
-    parser.add_argument("--max-unique-cases", type=int, default=180)
-    parser.add_argument("--max-model-calls", type=int, default=30)
-    parser.add_argument("--max-input-tokens", type=int, default=300_000)
-    parser.add_argument("--max-output-tokens", type=int, default=40_000)
+    parser.add_argument("--discovery-cases", type=int, default=750)
+    parser.add_argument("--evaluation-cases", type=int, default=200)
+    parser.add_argument("--max-unique-cases", type=int, default=950)
+    parser.add_argument("--max-model-calls", type=int, default=100)
+    parser.add_argument("--max-input-tokens", type=int, default=10_000_000)
+    parser.add_argument("--max-output-tokens", type=int, default=1_000_000)
     parser.add_argument("--max-batch-input-tokens", type=int, default=20_000)
     parser.add_argument("--max-records-scanned", type=int, default=50_000)
     parser.add_argument("--candidate-pool-multiplier", type=int, default=4)
     parser.add_argument("--max-case-chars", type=int, default=6_000)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--token-ledger",
+        type=Path,
+        default=Path("storage/factor-discovery/token-budget.sqlite3"),
+        help="persistent cumulative token ledger; the 100M limit is not reset per run",
+    )
     parser.add_argument(
         "--source-manifest",
         type=Path,
@@ -51,6 +58,7 @@ def _license_review_status(dataset: Path, source_manifest: Path | None) -> str:
 
 def run() -> None:
     args = _parser().parse_args()
+    token_ledger = FactorDiscoveryTokenLedger(args.token_ledger)
     budget = FactorDiscoveryBudget(
         discovery_cases=args.discovery_cases,
         evaluation_cases=args.evaluation_cases,
@@ -74,6 +82,7 @@ def run() -> None:
         sampling_seed=args.seed,
         model=args.model,
         budget=budget,
+        cumulative_token_budget=token_ledger.snapshot(),
     )
     rendered = json.dumps(plan.to_dict(), ensure_ascii=False, indent=2)
     if args.output:

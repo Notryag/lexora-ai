@@ -10,6 +10,7 @@ from lexora_ai.domain.factor_discovery import (
     FactorDiscoveryBudget,
     FactorDiscoveryCandidate,
     FactorDiscoveryPlan,
+    FactorTokenBudgetSnapshot,
 )
 from lexora_ai.infrastructure.factor_discovery_datasets import (
     load_factor_discovery_candidates,
@@ -32,6 +33,7 @@ def build_factor_discovery_plan(
     sampling_seed: int,
     model: str,
     budget: FactorDiscoveryBudget,
+    cumulative_token_budget: FactorTokenBudgetSnapshot,
 ) -> FactorDiscoveryPlan:
     identity, declared = _dataset_identity(path, dataset_sha256)
     loaded = load_factor_discovery_candidates(
@@ -66,6 +68,7 @@ def build_factor_discovery_plan(
     estimated_model_calls = len(batches) + merge_calls
     estimated_input_tokens = sum(batch.estimated_input_tokens for batch in batches)
     reserved_output_tokens = budget.max_output_tokens
+    estimated_total_tokens = estimated_input_tokens + reserved_output_tokens
     budget_errors: list[str] = []
     if estimated_model_calls > budget.max_model_calls:
         budget_errors.append("estimated model calls exceed max_model_calls")
@@ -77,6 +80,8 @@ def build_factor_discovery_plan(
         budget_errors.append("a batch exceeds max_batch_input_tokens")
     if len(discovery) + len(evaluation) > budget.max_unique_cases:
         budget_errors.append("selected cases exceed max_unique_cases")
+    if estimated_total_tokens > cumulative_token_budget.remaining_tokens:
+        budget_errors.append("estimated total tokens exceed cumulative remaining tokens")
     selected_by_outcome = Counter(case.outcome_bucket for case in (*discovery, *evaluation))
     readiness_errors = list(budget_errors)
     if not declared:
@@ -107,6 +112,8 @@ def build_factor_discovery_plan(
         estimated_model_calls=estimated_model_calls,
         estimated_input_tokens=estimated_input_tokens,
         reserved_output_tokens=reserved_output_tokens,
+        estimated_total_tokens=estimated_total_tokens,
+        cumulative_token_budget=cumulative_token_budget,
         within_budget=not budget_errors,
         budget_errors=tuple(budget_errors),
         execution_ready=not readiness_errors,

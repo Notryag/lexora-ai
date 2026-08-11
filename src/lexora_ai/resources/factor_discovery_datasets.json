@@ -25,11 +25,82 @@
   },
   {
     "name": "lecardv2",
-    "version": "repository-main",
+    "version": "3326485a6c41f8aeda15502fea24e658f8fab746",
     "publisher": "THUIR",
     "source_url": "https://github.com/THUIR/LeCaRDv2",
+    "source_page": "https://github.com/THUIR/LeCaRDv2",
     "acquisition_status": "not_downloaded",
     "license_review_status": "pending",
+    "permitted_scopes": ["research_planning"],
+    "files": [
+      {
+        "name": "query-all-context",
+        "path": "query/query_allcontext.json",
+        "source_url": "https://raw.githubusercontent.com/THUIR/LeCaRDv2/3326485a6c41f8aeda15502fea24e658f8fab746/query/query_allcontext.json",
+        "allowed_hostname": "raw.githubusercontent.com",
+        "size_bytes": 17066722,
+        "sha256": "38c0c7af6d0dd06d663fc543eca0eb2b289ea121fb571e1634edd368681f97cc"
+      }
+    ]
+  },
+  {
+    "name": "cail2022-lcr",
+    "version": "c15825aff9c975ee6e996dce91ded64a1a9d6bcf",
+    "publisher": "THUNLP LEAD / CAIL2022-LCR",
+    "source_url": "https://github.com/thunlp/LEAD",
+    "source_page": "https://github.com/china-ai-law-challenge/CAIL2022",
+    "acquisition_status": "not_downloaded",
+    "license_review_status": "pending",
+    "permitted_scopes": ["research_planning"],
+    "files": [
+      {
+        "name": "stage2-queries",
+        "path": "CAIL2022/stage2/query_stage2.json",
+        "source_url": "https://raw.githubusercontent.com/thunlp/LEAD/c15825aff9c975ee6e996dce91ded64a1a9d6bcf/CAIL2022/stage2/query_stage2.json",
+        "allowed_hostname": "raw.githubusercontent.com",
+        "size_bytes": 351261,
+        "sha256": "8565296c1798eb2f82c2df61c55ea5380f04a37dbf9a1f4f79803f0313ec8bae"
+      }
+    ]
+  },
+  {
+    "name": "stard",
+    "version": "bae10e1f358685446c3af4b15e7b94724f83bc9e",
+    "publisher": "THUIR",
+    "source_url": "https://github.com/oneal2000/STARD",
+    "source_page": "https://github.com/oneal2000/STARD",
+    "acquisition_status": "not_downloaded",
+    "license_review_status": "pending",
+    "permitted_scopes": ["research_planning"],
+    "files": [
+      {
+        "name": "consultation-queries",
+        "path": "data/queries.json",
+        "source_url": "https://raw.githubusercontent.com/oneal2000/STARD/bae10e1f358685446c3af4b15e7b94724f83bc9e/data/queries.json",
+        "allowed_hostname": "raw.githubusercontent.com",
+        "size_bytes": 1818895,
+        "sha256": "e64dcdbda5d2b734a7242253620dcf5e8325a3d726f0ca0a86e9b3664b8ba644"
+      }
+    ]
+  },
+  {
+    "name": "lecard-elem",
+    "version": "acl-2024",
+    "publisher": "Renmin University of China",
+    "source_url": "https://aclanthology.org/2024.findings-acl.139/",
+    "source_page": "https://aclanthology.org/2024.findings-acl.139/",
+    "acquisition_status": "source_review_required",
+    "license_review_status": "pending",
     "permitted_scopes": ["research_planning"]
+  },
+  {
+    "name": "peoples-courts-case-database",
+    "version": "live-official-source",
+    "publisher": "Supreme People's Court",
+    "source_url": "https://rmfyalk.court.gov.cn/",
+    "source_page": "https://www.court.gov.cn/zixun/xiangqing/471041.html",
+    "acquisition_status": "approved-connector-required",
+    "license_review_status": "pending",
+    "permitted_scopes": ["manual_review"]
   }
 ]

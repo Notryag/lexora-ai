@@ -45,11 +45,10 @@ def test_conversation_prompt_does_not_claim_external_retrieval() -> None:
 
     prompt = build_conversation_prompt(request)
 
-    assert "不得声称已核验具体法律规定" in prompt
     assert "公司没有提前通知" in prompt
-    assert "不要重复询问已经明确的信息" in prompt
-    assert "只有关键事实不足时" in prompt
-    assert "信息已经足够，先直接回答用户当前问题" in LEXORA_SYSTEM_PROMPT
+    assert "prepare_legal_turn" in prompt
+    assert "不重复询问已有信息" in prompt
+    assert "事实不完整" in LEXORA_SYSTEM_PROMPT
 
 
 def test_conversation_prompt_delegates_retrieval_choice_to_agent() -> None:
@@ -63,20 +62,32 @@ def test_conversation_prompt_delegates_retrieval_choice_to_agent() -> None:
         retrieval_available=True,
         case_memory_available=True,
     )
-    payload = json.loads(
-        prompt.split("<case_data>", maxsplit=1)[1].removesuffix("</case_data>")
+    payload = json.loads(prompt.split("<case_data>", maxsplit=1)[1].removesuffix("</case_data>"))
+
+    assert "先调用 prepare_legal_turn" in prompt
+    assert "turn_preparation" in LEXORA_SYSTEM_PROMPT
+    assert "普通寒暄简短自然地回应" in LEXORA_SYSTEM_PROMPT
+    assert "最多两个问题" in LEXORA_SYSTEM_PROMPT
+    assert "必须展示条件分支" in LEXORA_SYSTEM_PROMPT
+    assert payload["capabilities"] == {"retrieval": True, "case_memory": True}
+    assert payload["retrieved_material_chunks"] == []
+    assert "factor_schema" in payload
+    assert payload["factor_schema"]["definitions"]
+
+
+def test_conversation_prompt_delegates_preparation_to_runtime_tool() -> None:
+    request = ConversationTurnRequest(message="入户盗窃五万元大概会判多久？")
+
+    prompt = build_conversation_prompt(
+        request,
+        retrieval_available=True,
+        case_memory_available=True,
     )
 
-    assert "按需自主调用" in prompt
-    assert "纯寒暄" in prompt
-    assert "update_case_profile" in prompt
-    assert "不要把推断" in prompt
-    assert "相同含义已被档案覆盖则禁止调用" in prompt
-    assert "不能因为已经写入 key_facts 就遗漏当事人" in LEXORA_SYSTEM_PROMPT
-    assert "300 个中文字符以内" in LEXORA_SYSTEM_PROMPT
-    assert "不要一边声称信息" in LEXORA_SYSTEM_PROMPT
-    assert "不能因为档案尚为空" in LEXORA_SYSTEM_PROMPT
-    assert payload["retrieved_material_chunks"] == []
+    assert "按工具 schema 提交本轮结构化准备" in prompt
+    assert "prepare_legal_turn" in prompt
+    assert "法定区间不等于具体" in LEXORA_SYSTEM_PROMPT
+    assert "目前只能说明一般原则，不能判断具体结果" not in LEXORA_SYSTEM_PROMPT
 
 
 def test_conversation_prompt_includes_user_confirmed_case_profile() -> None:
@@ -116,7 +127,7 @@ def test_conversation_prompt_keeps_legal_authority_provenance() -> None:
         ),
     )
 
-    assert "已提供经过来源约束的法规检索结果" in prompt
+    assert "法规来源只能用于法律规则" in LEXORA_SYSTEM_PROMPT
     assert '"reference":"Labc:C1"' in prompt
     assert '"source_url":"https://flk.npc.gov.cn/detail?id=test"' in prompt
 
@@ -139,7 +150,7 @@ def test_conversation_prompt_keeps_case_law_provenance_and_limits_analogy() -> N
         ),
     )
 
-    assert "类案不决定本案结果" in prompt
+    assert "不得因类案结果推断本案必然结果" in LEXORA_SYSTEM_PROMPT
     assert '"reference":"Cabc:S3"' in prompt
     assert '"case_number":"指导案例240号"' in prompt
     assert "不得把类案事实当成本案事实" in LEXORA_SYSTEM_PROMPT

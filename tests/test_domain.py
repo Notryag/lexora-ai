@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from lexora_ai.domain import CaseAnalysisRequest, CaseMaterial
+from lexora_ai.domain import CaseAnalysisRequest, CaseFactorProfile, CaseMaterial, CaseProfile
 from lexora_ai.domain.cases import MAX_TOTAL_MATERIAL_CHARS
 
 
@@ -27,3 +27,8 @@ def test_request_rejects_materials_over_total_budget() -> None:
             ],
         )
 
+
+def test_case_profile_retrieval_text_includes_factor_profile() -> None:
+    profile = CaseProfile(factor_profile=CaseFactorProfile(active_domains=["criminal.theft"]))
+
+    assert "criminal.theft" in profile.retrieval_text()

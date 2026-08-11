@@ -28,6 +28,9 @@ from lexora_ai.application import (
 )
 from lexora_ai.config import Settings
 from lexora_ai.domain import CaseAnalysisRequest, ConversationTurnRequest
+from lexora_ai.infrastructure.legal_turn_middleware import (
+    LegalTurnPreparationMiddleware,
+)
 from lexora_ai.infrastructure.north_tools import build_lexora_tools
 from lexora_ai.prompts import (
     LEXORA_SYSTEM_PROMPT,
@@ -175,7 +178,12 @@ class NorthCaseAnalysisGateway:
             record,
             agent_factory=lambda: build_agent(
                 self._get_config(),
-                tools=build_lexora_tools(retrieval, case_memory),
+                tools=build_lexora_tools(
+                    retrieval,
+                    case_memory,
+                    user_message=request.message,
+                ),
+                additional_middlewares=[LegalTurnPreparationMiddleware()],
                 checkpointer=self._checkpointer,
             ),
             graph_input={"messages": graph_messages},

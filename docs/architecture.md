@@ -58,23 +58,121 @@ retrieval primitives. Lexora owns its PostgreSQL ORM models and repository adapt
 legal workflow, prompts, and response semantics. It imports the standalone package boundary only;
 it does not import Dayboard application modules or tables.
 
+## Recommended V1 Architecture
+
+Lexora v1 should center on a structured legal-intake layer rather than on larger prompt bundles or a
+full multi-agent graph. The recommended path is:
+
+~~~text
+CaseIntakeService
+    +----> Matter / issue classifier
+    +----> FactorSchemaRegistry      core factors + domain extensions
+    +----> StructuredFactorExtractor current turn + prior case state
+    +----> SufficiencyGate           answer now vs ask 1~2 high-impact questions
+    +----> RetrievalPlanner          statutes / interpretations / cases from factors
+    +----> AnswerComposer            provisional analysis first, then bounded follow-up
+~~~
+
+This keeps one primary conversational Agent while moving the unstable part of legal consultation
+into a product-owned case-understanding contract. The intake layer should not behave like a rigid
+form. It extracts structured legal factors from free-form dialogue, carries them across turns, marks
+them as asserted / denied / unknown / conflicting, and exposes only the small set of missing factors
+that would materially change the current legal answer.
+
+The main alternatives are explicitly deferred:
+
+- full multi-agent orchestration as the default response path;
+- archetype or prototype matching as the backbone of general legal consultation.
+
+Both may appear later as specialized slices, but they are not the base architecture for the current
+personal legal-analysis product.
+
+## Reference Systems And Borrowed Patterns
+
+Lexora should not copy any one external system wholesale. The useful path is to borrow concrete
+strengths from different projects while keeping one coherent product contract.
+
+| Reference | Worth borrowing now | Defer or avoid as the base path |
+|---|---|---|
+| structured-knowledge-extraction | modular core + extension factor schema; factor-oriented intake; missing-factor ranking | synthetic-data archetype clustering as the backbone of general legal consultation |
+| LeCoDe | legal consultation should be evaluated as multi-turn fact gathering plus advice quality; key-fact and fact-importance framing | benchmark-style interaction loops directly in product UX |
+| DLawBench | separate client belief from legally material fact; explicitly test information gathering and grounded memo writing | turning every conversation into a long lawyer interview regardless of user goal |
+| FactFiller | dynamically generate bounded follow-up questions for vague users; tie questions to downstream legal retrieval | full questionnaire-first interaction before any useful provisional answer |
+| JurisMA / From Query to Counsel | legal element graph thinking: entities, events, intents, legal issues; dynamic routing plus statutory grounding | full multi-agent decomposition before the intake and retrieval contracts are stable |
+| ELLA | show only cited authorities and cases as user-visible evidence cards; use evidence presentation to improve trust | making article similarity or manual article selection the primary workflow |
+| ChatLaw | SOP-style decomposition of legal work; domain-specific legal reasoning assets; Chinese legal assistant precedent | large model-centric platform complexity or broad multi-agent orchestration as v1 |
+| NyayaAI | clean split between intake, research, strategy, drafting, compliance; SSE timeline and eval mindset | five-agent routing as the default answer path for the current personal product |
+| Claude for Legal | narrow workflow agents, conservative defaults, source attribution, human-review gates | assuming attorney-review workflow or enterprise legal operations as the personal-user baseline |
+
+The intended borrowing sequence is:
+
+~~~text
+now
+  -> structured factor intake
+  -> sufficiency gate
+  -> grounded retrieval
+  -> cited evidence cards
+
+later
+  -> domain workflows
+  -> optional specialist agents
+  -> questionnaire refinement
+  -> archetype modules for narrow domains
+~~~
+
+## Immediate Implementation Order
+
+The next implementation slice should be built in this order:
+
+1. FactorSchemaRegistry
+2. CaseFactorProfile
+3. StructuredFactorExtractor
+4. SufficiencyGate
+5. RetrievalPlanner
+6. AnswerComposer adjustments
+
+The order matters. Lexora should not keep expanding prompts before these contracts exist.
+Retrieval quality, follow-up quality, and final answer structure should all be driven by the factor
+profile and sufficiency gate rather than by free-form model behavior.
+
 ## Retrieval Evolution
 
-For a conversation turn, the Agent receives three Lexora-owned tools: case-material search, verified
-statute search, and reviewed guiding-case search. It decides whether and which tools are needed from
-the user's intent; greetings and other non-legal turns do not automatically run retrieval. Tool
-closures inject the trusted case and user context, while the model supplies only a query. Selected
-tools rank persisted chunks lexically and semantically and fuse their rankings. Statute chunks
+For every conversation turn, a Lexora-owned middleware requires one successful
+`prepare_legal_turn` call before the model may produce a final response. The structured call classifies
+the turn, extracts only user-stated case facts, identifies one legal issue, supplies up to three focused
+authority queries, and names at most two outcome-changing variables. For legal questions the tool runs
+the raw user question and focused queries through verified-statute retrieval; social turns skip RAG.
+The Agent may then use separate case-material, statute, and guiding-case tools for supplemental searches.
+Tool closures inject the trusted case and user context, while the model never supplies case or user IDs.
+Selected tools rank persisted chunks lexically and semantically and fuse their rankings. Statute chunks
 preserve their `编/章/节/条` hierarchy; case-law chunks preserve named decision sections. Without an
 embedding configuration all paths retain deterministic lexical retrieval. A structured full-case
 analysis still receives all submitted material chunks because completeness, rather than
 question-specific recall, is its contract.
 
-Vectors use PostgreSQL's native dimension-flexible `vector` type. The personal-case limit makes an
-exact in-application scan deterministic and sufficient for now; an approximate database index is
-deferred until corpus size and embedding dimension justify it. Lexora imports `rag-core`, not
+This follows DeerFlow's middleware boundary without copying its complete agent stack: orchestration
+constraints wrap model calls while domain work remains in tools. North still owns the loop and
+Checkpointer; Lexora owns the legal turn schema, preparation middleware, retrieval plan, and answer
+contract.
+
+Vectors use PostgreSQL's native dimension-flexible `vector` type. The current corpus size makes an
+exact database-side vector scan deterministic and sufficient for now; an approximate database index
+is deferred until corpus size and embedding dimension justify it. Lexora imports `rag-core`, not
 `rag-langchain`, because the latter remains an application
 with its own API, persistence, security, Agent, and Run lifecycle.
+
+Online legal-authority retrieval has stricter resource constraints than offline evaluation. Vector
+distance and Top-K candidate selection must execute inside PostgreSQL/pgvector. The application may
+scan lightweight statute text for deterministic lexical candidates, but it must not select the full
+corpus embedding column or materialize all vectors in Python. Only the bounded union of lexical and
+vector candidates may be hydrated for final rank fusion. Query fan-out and concurrency must both
+have explicit limits. The current limits are 10,000 lightweight lexical chunks, 500 vectors for the
+test-only non-PostgreSQL fallback, Top-K 50, four concurrent database retrievals, four authority
+queries per legal turn, and two concurrent authority queries within that turn. Capacity beyond a
+hard limit must introduce an indexed retrieval path; it must not silently restore a full-corpus
+application scan. These are correctness constraints because violating them can exhaust the host, not
+merely retrieval optimizations. See
+[the 2026-08-11 memory-thrashing incident](incident-2026-08-11-memory-thrashing.md).
 
 The expected evolution is:
 
@@ -103,18 +201,45 @@ outcome.
 ## Structured Case Profile
 
 The personal workspace persists a user-editable `CaseProfile` on each legal case. It contains case
-type, parties, claims, key facts, disputed issues, evidence notes, and missing information. The Agent
-may call a Lexora-owned `update_case_profile` tool to append concise facts explicitly stated or
-confirmed by the user and to resolve previously missing information. Tool closures retain trusted
-case context; the model never supplies a case or user identifier. Updates remain staged in memory
-until the Run completes, then commit in the same transaction as the assistant message. Failed or
-cancelled Runs leave the durable profile unchanged.
+type, parties, claims, key facts, disputed issues, evidence notes, and missing information. The
+required `prepare_legal_turn` tool stages concise facts explicitly stated or confirmed by the user and
+replaces missing information with the current turn's outcome-changing variables. Tool closures retain
+trusted case context; the model never supplies a case or user identifier. Updates remain staged in
+memory until the Run completes, then commit in the same transaction as the assistant message. Failed
+or cancelled Runs leave the durable profile unchanged.
 
 The profile is application-owned legal workflow data, not a `rag-core`, North, or Agent Platform
 concern. Conversation prompts and retrieval queries may use it as user-stated context, while the
 system still labels it as unverified case data and never treats it as legal authority or proof. It is
 a projection of case state for inspection and correction, not a required form or a separate
 generation workflow. Conversation history remains the durable record.
+
+The next evolution is to make this profile more explicitly factor-oriented: core factors such as
+jurisdiction, timeline, parties, claims, evidence, and disputed facts should remain common across
+the product, while domain slices add their own extensions, for example theft amount / residential
+entry / prior conviction, termination reason / service years / salary base, or marital acquisition
+time / registration / down-payment source. Lexora should avoid one giant universal schema, but it
+should also avoid leaving every turn to an unbounded prompt. The intended shape is a modular schema:
+
+~~~text
+core factors
+    +----> criminal extensions
+    +----> labor extensions
+    +----> family extensions
+    +----> contract extensions
+~~~
+
+CaseFactorProfile is not an AI-only analysis artifact. It should be treated as product-owned case
+state with AI-assisted proposals:
+
+- the model may propose factor updates from the current turn;
+- application code merges, deduplicates, and marks state transitions;
+- only successful runs commit updates;
+- legal conclusions, probability estimates, and retrieved authorities do not become factors;
+- user statements, denials, conflicts, and material-supported facts remain distinguishable.
+
+In other words, AI helps extract and normalize the case state, but the profile itself is a bounded
+domain object, not a free-form model summary.
 
 ## Conversation Experience Contract
 
@@ -125,10 +250,9 @@ completed persisted message pairs. Later turns reuse the committed runtime threa
 successful checkpoint, and add only the new user turn. Failed or cancelled partial checkpoints never
 advance either Thread pointer. The current case profile remains product-owned context, and the Agent may
 retrieve private evidence, verified legal authorities, or reviewed cases through separate tools.
-The model must reuse already supplied facts, avoid repeated questions, and ask at most three
-prioritized clarification questions when a missing fact materially changes the analysis. Once
-context is sufficient, it should answer the user's immediate question before expanding into
-structured analysis.
+The preparation schema limits each turn to two prioritized decision variables. The final response
+must answer from the prepared facts and authorities before asking about those variables; missing facts
+do not block a bounded provisional analysis.
 
 The browser submits one streaming HTTP request per turn. North `messages` events become incremental
 assistant text; the final `values` event completes the Run without replaying that text. The user
@@ -159,10 +283,11 @@ Completed: official North PostgreSQL checkpointing now restores Agent state from
 thread and checkpoint while each turn retains a distinct product Run lifecycle. Lexora Alembic
 excludes the four North-owned checkpoint tables from product schema comparison.
 
-Completed: the initial five-source statute set has been synchronized, structurally verified, and
-approved. Its evaluation covers 1,617 article chunks and 17 grounded queries. The deterministic
-exact-plus-lexical path reaches Recall@3/5 of 1.0 and MRR@5 of 0.8725. With the configured BGE-M3
-vectors, hybrid retrieval reaches Recall@3/5 of 1.0 and MRR@5 of 0.9412.
+Completed: eight statute sources have been synchronized, structurally verified, and approved. The
+set includes the current Criminal Law, Criminal Procedure Law, and theft judicial interpretation.
+Its evaluation covers 2,445 article chunks and 23 grounded queries. The deterministic exact-plus-
+lexical path reaches Recall@3/5 of 1.0 and MRR@5 of 0.8768. The earlier five-source, 17-query BGE-M3
+hybrid baseline reached Recall@3/5 of 1.0 and MRR@5 of 0.9412.
 
 Completed: the initial seven-source Supreme People's Court guiding-case set has a separate storage,
 review, retrieval, prompt, citation, and UI path. Its 52 chunks and seven grounded lexical queries
@@ -186,4 +311,5 @@ a lightweight profile update state.
 5. Authentication and authorization before any multi-user release.
 
 Each slice must remain usable and testable on its own. Do not begin by copying the complete RAG
-application or by designing a universal legal schema.
+application or by designing one giant legal schema up front. Grow a stable core plus measured domain
+extensions.

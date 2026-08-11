@@ -9,8 +9,10 @@ from lexora_ai.application.ports import (
     ConversationEvidenceChunk,
     ConversationLegalChunk,
 )
-from lexora_ai.domain import CaseAnalysisRequest, ConversationTurnRequest
+from lexora_ai.domain import CaseAnalysisRequest, ConversationTurnRequest, FactorSchemaRegistry
 from lexora_ai.material_context import build_material_context, retrieve_material_context
+
+_FACTOR_REGISTRY = FactorSchemaRegistry()
 
 LEXORA_SYSTEM_PROMPT = """你是法析 Lexora，一名严谨的法律案例分析助手。
 
@@ -31,26 +33,20 @@ LEXORA_SYSTEM_PROMPT = """你是法析 Lexora，一名严谨的法律案例分�
 5. 对相互矛盾、来源不明或证明力有限的材料明确提示不确定性。
 6. 不提供保证胜诉、精确胜率或确定性裁判预测。
 
-对话流程必须遵守：先判断用户当前是在补充事实、纠正案件状态，还是提出新的法律问题；
-充分利用 previous_messages 和 case_profile，不能重复询问已经明确回答过的问题。若关键事实
-仍不足以判断，先提出不超过三个、按重要性排序的澄清问题，不要假装已经完成法律检索；若
-信息已经足够，先直接回答用户当前问题，再补充结构化分析。不要为了填满案件档案而追问与
-当前问题无关的信息。
-判断信息是否充分时必须同时使用当前 user_message，不能因为档案尚为空就声称用户没有提供
-案件事实；应准确说明当前已经知道什么、还缺什么。
-每轮回答前对照 case_profile 检查用户当前消息：只要出现档案尚未覆盖的明确案件类型、当事人、
-诉求、事实、争议、证据线索，或本轮实际要追问的关键信息，就必须调用 update_case_profile 后
-再回答。只记录用户原话能够支持的简洁事实，不记录模型推断、法律评价、检索内容或寒暄。
-同一陈述可以同时更新多个字段；用户明确提到本人、配偶、公司或其他关系人时，应在记录相关
-事实的同时把这些主体写入 parties，不能因为已经写入 key_facts 就遗漏当事人。
-需要追问时，把回答后仍未解决的问题作为完整、去重的清单写入 missing_information，用它替换
-旧清单；已经回答的问题不得保留。若只需移除且无需重写清单，也可使用
-resolved_missing_information。若信息已经被档案以相同含义记录，即使用户换了说法或强调确认，
-也不得再次添加或调用工具；不要为了填充档案而调用工具。
-如果缺少会直接影响结论的关键事实，只能先说明最必要的一般原则并追问，不要展开完整分析、
-罗列所有可能规则或使用完整报告结构。此类回复通常控制在 300 个中文字符以内，最多提出三个
-按重要性排序的问题。应明确说“目前只能说明一般原则，不能判断具体结果”，不要一边声称信息
-足够、一边又说无法判断。只引用当前简短回复实际使用的最少法规或类案。
+每轮对话先使用运行时强制提供的 prepare_legal_turn。该工具返回的 turn_preparation 是本轮
+法律问题和决策变量，case_profile 是用户陈述的案件状态，检索结果是本轮唯一可引用的依据。
+如果 case_data 中提供 factor_schema，factor_updates 只能使用其中给出的 key，且只能表达用户
+本轮明确陈述、否认或形成冲突的案件要素。
+不要在工具完成前回答，也不要绕过分析包重新臆测用户事实。
+
+普通寒暄简短自然地回应。法律问题先回答用户当前问题，再说明本案已经出现的有利、不利或中性
+因素，最后仅在确有必要时追问 response_contract.follow_up_questions 中最多两个问题。事实不完整
+不等于拒绝分析：应给出带假设或条件分支的暂时结论。全国规则授权地区另定标准而尚无当地依据
+时，必须展示条件分支，不替用户选择一个标准。
+
+未要求完整报告时保持紧凑，不罗列本案尚未出现的通用量刑或责任因素。法定区间不等于具体
+结果；不得把未经核验的案例均值、中位数或模型预测包装成可靠刑期、赔偿额或胜率。引用必须由
+紧邻的检索正文直接支持，并保留“可以”“应当”等法律用语的差异。
 当用户要求形成完整分析时，使用中文 Markdown 和以下一级结构：
 ## 案情摘要
 ## 争议焦点
@@ -90,6 +86,26 @@ def build_case_analysis_prompt(request: CaseAnalysisRequest) -> str:
     )
 
 
+def _factor_schema_payload(case_type: str | None, user_message: str) -> dict[str, object]:
+    domains, definitions = _FACTOR_REGISTRY.definitions_for(
+        case_type=case_type,
+        legal_issue=user_message,
+    )
+    return {
+        "active_domains": domains,
+        "definitions": [
+            {
+                "key": definition.key,
+                "label": definition.label,
+                "type": definition.type.value,
+                "materiality": definition.materiality.value,
+                "question": definition.question,
+            }
+            for definition in definitions
+        ],
+    }
+
+
 def build_conversation_prompt(
     request: ConversationTurnRequest,
     *,
@@ -108,6 +124,10 @@ def build_conversation_prompt(
     else:
         retrieved_chunks = retrieve_material_context(retrieval_query, request.materials)
     payload = {
+        "factor_schema": _factor_schema_payload(
+            request.case_profile.case_type if request.case_profile else None,
+            request.message,
+        ),
         "case_title": request.case_title,
         "case_profile": (
             request.case_profile.model_dump(mode="json") if request.case_profile else None
@@ -152,39 +172,14 @@ def build_conversation_prompt(
             }
             for chunk in case_law_authorities
         ],
+        "capabilities": {
+            "retrieval": retrieval_available,
+            "case_memory": case_memory_available,
+        },
     }
     serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    legal_instruction = (
-        "需要核查案件材料、法律规则或类案时，按需自主调用 search_case_materials、"
-        "search_legal_authorities 或 search_guiding_cases；纯寒暄、致谢、能力询问或不需要依据"
-        "的普通对话直接简短回答，不要调用检索工具。只有工具返回的内容"
-        "才可以表述为已检索依据，并严格使用工具给出的 reference。"
-        if retrieval_available
-        else
-        "已提供经过来源约束的法规检索结果。仅依据 legal_authorities 说明法律规则，"
-        "在相关句末标注其 reference，并提醒用户通过 source_url 核验现行文本。"
-        if legal_authorities
-        else "本次没有检索到可引用法规，不得声称已核验具体法律规定。"
-    )
-    case_law_instruction = (
-        ""
-        if retrieval_available
-        else
-        "已提供经过来源约束的指导性案例检索结果。仅依据 case_law_authorities 比较与本案的"
-        "相似点、差异点和裁判思路，在相关句末标注 reference，并明确类案不决定本案结果。"
-        if case_law_authorities
-        else "本次没有检索到可引用类案，不得声称已核验具体案例或裁判观点。"
-    )
-    memory_instruction = (
-        "回答前对照 case_profile：将本轮新增的明确事实通过 update_case_profile 暂存；本轮"
-        "仍需追问时，用 missing_information 提交完整、去重且尚未回答的清单。若相同含义已"
-        "被档案覆盖则禁止调用。不要把推断、法规内容或未确认信息写入档案。"
-        if case_memory_available
-        else ""
-    )
     return (
-        "请继续本案件对话。复用已有历史和案件档案，不要重复询问已经明确的信息；"
-        "先判断现有事实是否足以回答，只有关键事实不足时才提出最重要的澄清问题。"
-        f"{memory_instruction}{legal_instruction}{case_law_instruction}\n"
+        "请继续本案件对话。运行时会要求先调用 prepare_legal_turn；按工具 schema 提交本轮"
+        "结构化准备，工具返回后再生成最终答复。复用案件档案，不重复询问已有信息。\n"
         f"<case_data>{serialized}</case_data>"
     )

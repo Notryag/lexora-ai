@@ -16,6 +16,15 @@ from lexora_ai.domain.cases import (
     MaterialKind,
 )
 from lexora_ai.domain.conversations import ConversationTurnRequest, ConversationTurnResult
+from lexora_ai.domain.factors import (
+    CaseFactor,
+    CaseFactorProfile,
+    FactorDefinition,
+    FactorMateriality,
+    FactorSchemaRegistry,
+    FactorState,
+    FactorType,
+)
 from lexora_ai.domain.legal_knowledge import (
     LegalCitation,
     LegalKnowledgeChunk,
@@ -27,7 +36,13 @@ from lexora_ai.domain.legal_knowledge import (
     LegalSourceSummary,
     LegalSourceUpdate,
 )
+from lexora_ai.domain.legal_turns import (
+    LegalTurnFactorUpdate,
+    LegalTurnIntent,
+    LegalTurnPreparation,
+)
 from lexora_ai.domain.runs import CaseRun, CaseRunStatus
+from lexora_ai.domain.sufficiency import FollowUpQuestion, SufficiencyDecision, SufficiencyGate
 from lexora_ai.domain.workspaces import (
     CaseConversationMessage,
     CaseConversationTurnRequest,
@@ -46,6 +61,8 @@ from lexora_ai.domain.workspaces import (
 __all__ = [
     "CaseAnalysisRequest",
     "CaseAnalysisResult",
+    "CaseFactor",
+    "CaseFactorProfile",
     "CaseLawChunk",
     "CaseLawCitation",
     "CaseLawSourceCreate",
@@ -64,6 +81,12 @@ __all__ = [
     "CaseConversationTurnResult",
     "ConversationTurnRequest",
     "ConversationTurnResult",
+    "FollowUpQuestion",
+    "FactorDefinition",
+    "FactorMateriality",
+    "FactorSchemaRegistry",
+    "FactorState",
+    "FactorType",
     "LegalCase",
     "LegalCaseCreate",
     "LegalCaseUpdate",
@@ -76,8 +99,13 @@ __all__ = [
     "LegalSourceStatus",
     "LegalSourceSummary",
     "LegalSourceUpdate",
+    "LegalTurnFactorUpdate",
+    "LegalTurnIntent",
+    "LegalTurnPreparation",
     "MaterialKind",
     "MaterialUploadMetadata",
     "StoredCaseMaterial",
     "StoredMaterialChunk",
+    "SufficiencyDecision",
+    "SufficiencyGate",
 ]

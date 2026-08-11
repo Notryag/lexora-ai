@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from lexora_ai.domain.case_law import CaseLawCitation
 from lexora_ai.domain.cases import CaseMaterial, MaterialKind
+from lexora_ai.domain.factors import CaseFactorProfile
 from lexora_ai.domain.legal_knowledge import LegalCitation
 
 
@@ -18,6 +19,7 @@ class CaseProfile(BaseModel):
     disputed_issues: list[str] = Field(default_factory=list, max_length=20)
     evidence_notes: list[str] = Field(default_factory=list, max_length=30)
     missing_information: list[str] = Field(default_factory=list, max_length=30)
+    factor_profile: CaseFactorProfile = Field(default_factory=CaseFactorProfile)
 
     @field_validator("case_type")
     @classmethod
@@ -82,6 +84,7 @@ class CaseProfile(BaseModel):
             *self.disputed_issues,
             *self.evidence_notes,
             *self.missing_information,
+            self.factor_profile.retrieval_text(),
         ]
         return " ".join(value for value in values if value)
 
@@ -166,6 +169,10 @@ class CaseProfilePatch(BaseModel):
         max_length=10,
         description="用户本轮已经回答的待补信息原文，必须与当前档案中的条目一致",
     )
+    factor_profile: CaseFactorProfile | None = Field(
+        default=None,
+        description="应用层维护的结构化案件要素画像；仅接受受控更新",
+    )
 
     @model_validator(mode="after")
     def normalize_and_validate(self) -> CaseProfilePatch:
@@ -205,6 +212,7 @@ class CaseProfilePatch(BaseModel):
         if (
             self.case_type is None
             and self.missing_information is None
+            and self.factor_profile is None
             and not has_additions
         ):
             raise ValueError("case profile patch cannot be empty")
@@ -229,9 +237,8 @@ class CaseProfilePatch(BaseModel):
             key_facts=merged(profile.key_facts, self.key_facts),
             disputed_issues=merged(profile.disputed_issues, self.disputed_issues),
             evidence_notes=merged(profile.evidence_notes, self.evidence_notes),
-            missing_information=[
-                item for item in missing_information if item not in resolved
-            ],
+            missing_information=[item for item in missing_information if item not in resolved],
+            factor_profile=self.factor_profile or profile.factor_profile,
         )
 
 

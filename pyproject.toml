@@ -43,6 +43,7 @@ lexora-evaluate-legal-retrieval = "lexora_ai.evaluation.legal_retrieval:run"
 lexora-evaluate-case-law-retrieval = "lexora_ai.evaluation.case_law_retrieval:run"
 lexora-factor-discovery = "lexora_ai.factor_discovery_cli:run"
 lexora-factor-dataset = "lexora_ai.factor_dataset_cli:run"
+lexora-factor-normalize = "lexora_ai.research_dataset_cli:run"
 lexora-legal-sources = "lexora_ai.legal_sources_cli:run"
 
 [tool.ruff]

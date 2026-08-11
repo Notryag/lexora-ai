@@ -257,4 +257,28 @@ Three newer evaluation assets are also present locally under ignored storage wit
 manifests: 300 CAIL2022-LCR queries (351,261 bytes), 800 LeCaRDv2 full-context queries (17,066,722
 bytes), and 1,543 STARD consultation queries (1,818,895 bytes). Their combined size is 19,236,878 bytes.
 They remain limited to research planning while license review is pending and are not yet accepted by
-the factor-discovery loader or sent to a model.
+the factor-discovery model executor or sent to a model.
+
+The three source shapes now have a shared normalization dry run:
+
+```bash
+uv run lexora-factor-normalize \
+  --source cail2022-lcr=storage/factor-discovery/cail2022-lcr/repository-master/raw/query_stage2.json \
+  --source lecardv2=storage/factor-discovery/lecardv2/repository-main/raw/query_allcontext.json \
+  --source stard=storage/factor-discovery/stard/repository-main/raw/queries.json
+```
+
+The normalized contract preserves dataset version, primary source ID, source aliases, record kind,
+bounded primary text, title, canonical case number when present, labels and a whitespace-normalized
+content SHA-256. Identity checks run in this order: same namespaced source ID or alias, same canonical
+case number, then same content hash within the same record kind. A consultation question is never
+collapsed into a judgment merely because its text matches. Same case number with different content
+hashes is reported as a cross-source text-version group. Records without a case number remain distinct
+unless their exact same-kind content hash matches; the dry run does not use fuzzy similarity to guess.
+
+The current joint dry run scanned and normalized all 2,643 records with zero rejections: 300
+CAIL2022-LCR case queries, 800 LeCaRDv2 case queries and 1,543 STARD consultations. LeCaRDv2 supplied
+791 canonical case numbers. Across these three downloaded query samples, no duplicate source ID, case
+number or same-kind content hash was found. There are 309 case records without a reliable case number,
+so this result is not evidence that the larger source corpora contain no overlap. The dry run caps each
+source file at 32 MiB and 5,000 records, writes no normalized corpus, and makes zero model calls.

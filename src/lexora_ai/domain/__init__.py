@@ -49,6 +49,13 @@ from lexora_ai.domain.legal_turns import (
     LegalTurnIntent,
     LegalTurnPreparation,
 )
+from lexora_ai.domain.research_datasets import (
+    NormalizedResearchRecord,
+    ResearchDatasetLoadResult,
+    ResearchDuplicateGroup,
+    ResearchNormalizationPlan,
+    ResearchRecordKind,
+)
 from lexora_ai.domain.runs import CaseRun, CaseRunStatus
 from lexora_ai.domain.sufficiency import FollowUpQuestion, SufficiencyDecision, SufficiencyGate
 from lexora_ai.domain.workspaces import (
@@ -118,6 +125,11 @@ __all__ = [
     "LegalTurnPreparation",
     "MaterialKind",
     "MaterialUploadMetadata",
+    "NormalizedResearchRecord",
+    "ResearchDatasetLoadResult",
+    "ResearchDuplicateGroup",
+    "ResearchNormalizationPlan",
+    "ResearchRecordKind",
     "StoredCaseMaterial",
     "StoredMaterialChunk",
     "SufficiencyDecision",

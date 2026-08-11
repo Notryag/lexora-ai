@@ -17,8 +17,7 @@ RUN apt-get update \
     && pip install --no-cache-dir "uv==${UV_VERSION}"
 
 COPY pyproject.toml uv.lock README.md ./
-COPY --from=agent-platform . /workspace/dayboard/packages/agent-platform
-COPY --from=rag-core . /workspace/rag-core
+COPY packages/rag-core ./packages/rag-core
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project --no-editable

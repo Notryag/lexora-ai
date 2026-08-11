@@ -16,12 +16,13 @@ Nginx 入口。
 
 ## 镜像构建
 
-API 镜像通过 Docker BuildKit 的附加上下文安装共享包：
+API 镜像使用两类共享包：
 
-- `../dayboard/packages/agent-platform`
-- `../rag-core`
+- 仓库内的 `packages/rag-core`；
+- 固定到具体 Dayboard commit 的公开 `agent-application-platform` Git 依赖。
 
-它们仍是独立包和唯一源码，不复制进 Lexora。构建机需要 Docker Compose 2.17 以上。
+`rag-core` 与 Lexora 一起版本化，Agent Platform 仍保持 Dayboard 中的唯一源码。构建不再要求
+仓库旁存在 `../rag-core` 或 `../dayboard` 目录，但首次解析 Git 依赖需要访问 GitHub。
 生产服务器不构建镜像。开发机或 CI 使用 `docker-compose.build.yml` 构建，将 API 和 Web
 镜像推送到镜像仓库；生产服务器使用 `docker-compose.prod.yml` 拉取指定版本。
 

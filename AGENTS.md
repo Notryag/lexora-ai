@@ -21,7 +21,8 @@ These instructions apply to coding agents working on Lexora.
 
 ## Extraction Guardrails
 
-- Do not create `rag-core` inside this repository.
+- Keep the vendored `packages/rag-core` package framework-neutral and independently testable.
+- Do not copy its retrieval primitives into `lexora_ai` or add legal/product vocabulary to the core.
 - Add a retrieval port only with the first real knowledge-retrieval use case.
 - Reuse Agent Platform lifecycle contracts through Lexora-owned persistence adapters. Do not copy
   Dayboard ORM models, application services, or database tables into this product.
@@ -44,6 +45,8 @@ These instructions apply to coding agents working on Lexora.
 Use `uv` for Python commands:
 
 ```bash
+uv run --project packages/rag-core ruff check .
+uv run --project packages/rag-core pytest -q
 uv run ruff check .
 uv run pytest -q
 ```

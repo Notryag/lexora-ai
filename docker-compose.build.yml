@@ -3,9 +3,6 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-      additional_contexts:
-        agent-platform: ../dayboard/packages/agent-platform
-        rag-core: ../rag-core
 
   web:
     build:

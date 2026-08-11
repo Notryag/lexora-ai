@@ -161,6 +161,10 @@ is deferred until corpus size and embedding dimension justify it. Lexora imports
 `rag-langchain`, because the latter remains an application
 with its own API, persistence, security, Agent, and Run lifecycle.
 
+`rag-core` is versioned in this repository under `packages/rag-core` so a standalone Lexora clone
+contains its complete retrieval foundation. It remains a separate Python package with independent
+tests and must not acquire legal, database, provider, authorization, or Agent-runtime concerns.
+
 Online legal-authority retrieval has stricter resource constraints than offline evaluation. Vector
 distance and Top-K candidate selection must execute inside PostgreSQL/pgvector. The application may
 scan lightweight statute text for deterministic lexical candidates, but it must not select the full

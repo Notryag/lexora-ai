@@ -19,7 +19,8 @@ Lexora 通过连续对话理解用户描述的情况，并将案件背景、当�
 - 使用 North 官方 PostgreSQL Checkpointer 恢复多轮 Agent 上下文；
 - 展示当前分析 Run 状态，并允许用户取消仍在排队或运行中的分析；
 - 使用 North Agent Runtime 调用 OpenAI 兼容模型；
-- 使用独立 `rag-core` 对材料进行确定性切分，并按当前问题执行词法/语义混合检索；
+- 使用仓库内独立 package `packages/rag-core` 对材料进行确定性切分，并按当前问题执行
+  词法/语义混合检索；
 - 生成带 `[M1:C1]` Chunk 引用的 Markdown 分析；
 - 按法条编号、词法和可选向量检索人工核验的官方法规，并保存可跳转原文的
   `[L...:C...]` 引用；
@@ -98,6 +99,8 @@ curl -X POST http://127.0.0.1:8010/api/v1/cases/CASE_ID/messages \
 ## 开发检查
 
 ```bash
+uv run --project packages/rag-core ruff check .
+uv run --project packages/rag-core pytest -q
 uv run ruff check .
 uv run pytest -q
 ```
@@ -113,6 +116,7 @@ src/lexora_ai/
   material_context.py  rag-core 材料切分、词法检索与产品引用投影
   api/             FastAPI 路由和依赖装配
 apps/web/           Next.js 法律对话与案件材料工作台
+packages/rag-core/  框架无关的切分、检索与排名融合 package
 docs/               架构与产品边界
 tests/              领域、应用与 API 测试
 ```

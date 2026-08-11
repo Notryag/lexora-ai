@@ -5,13 +5,10 @@ requires-python = ">=3.11"
 [[package]]
 name = "agent-application-platform"
 version = "0.1.0"
-source = { editable = "../dayboard/packages/agent-platform" }
+source = { git = "https://github.com/Notryag/dayboard.git?subdirectory=packages%2Fagent-platform&rev=6e21a4ffb9838eca1983e5857fe7f4e21da15775#6e21a4ffb9838eca1983e5857fe7f4e21da15775" }
 dependencies = [
     { name = "pydantic" },
 ]
-
-[package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.11.0,<3.0.0" }]
 
 [[package]]
 name = "aiosqlite"
@@ -693,7 +690,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-application-platform", editable = "../dayboard/packages/agent-platform" },
+    { name = "agent-application-platform", git = "https://github.com/Notryag/dayboard.git?subdirectory=packages%2Fagent-platform&rev=6e21a4ffb9838eca1983e5857fe7f4e21da15775" },
     { name = "alembic", specifier = ">=1.16.0,<2.0.0" },
     { name = "asyncpg", specifier = ">=0.30.0,<1.0.0" },
     { name = "docx2txt", specifier = ">=0.9,<1.0" },
@@ -705,7 +702,7 @@ requires-dist = [
     { name = "pypdf", specifier = ">=5.8.0,<7.0.0" },
     { name = "python-multipart", specifier = ">=0.0.20,<1.0.0" },
     { name = "pyyaml", specifier = ">=6.0.2,<7.0.0" },
-    { name = "rag-core", editable = "../rag-core" },
+    { name = "rag-core", editable = "packages/rag-core" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.40,<3.0.0" },
     { name = "uvicorn", specifier = ">=0.35.0,<1.0.0" },
 ]
@@ -1322,7 +1319,7 @@ wheels = [
 [[package]]
 name = "rag-core"
 version = "0.1.0"
-source = { editable = "../rag-core" }
+source = { editable = "packages/rag-core" }
 
 [package.metadata]
 

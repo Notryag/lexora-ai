@@ -269,7 +269,8 @@ One conversation cannot mutate the global catalog. Existing guiding-case ingesti
 examples, but a representative judgment corpus, provenance controls, discovery evaluation, and a
 publish/reject workflow are required before the catalog may influence production conversations.
 Prototype clustering and quantitative outcome prediction remain deferred until corpus quality and bias
-evaluation justify them.
+evaluation justify them. Dataset sources, provenance requirements and the first acquisition plan are
+specified in [Factor Discovery Data](factor-discovery-data.md).
 
 The browser submits one streaming HTTP request per turn. North `messages` events become incremental
 assistant text; the final `values` event completes the Run without replaying that text. The user

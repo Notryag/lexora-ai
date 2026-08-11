@@ -352,7 +352,10 @@ class PersistentLegalConversationService:
                     on_text_delta=emit_delta,
                     **gateway_arguments,
                 )
-            content = generated.content.strip()
+            content = _strip_unavailable_authority_references(
+                generated.content.strip(),
+                {*retrieval.legal_authorities, *retrieval.case_law_authorities},
+            )
             if not content:
                 raise RuntimeError("conversation provider returned an empty response")
             if on_text_delta is not None and not emitted_delta:
@@ -565,3 +568,12 @@ def _cited_chunks(
         seen.add(reference)
         cited.append(available[reference])
     return cited
+
+
+def _strip_unavailable_authority_references(
+    content: str, available_references: set[str]
+) -> str:
+    return AUTHORITY_REFERENCE_PATTERN.sub(
+        lambda match: match.group(0) if match.group(1) in available_references else "",
+        content,
+    )

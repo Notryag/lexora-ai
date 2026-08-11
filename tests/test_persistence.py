@@ -21,6 +21,9 @@ from lexora_ai.application import (
     LegalSourceService,
     PersistentLegalConversationService,
 )
+from lexora_ai.application.persistent_conversation import (
+    _strip_unavailable_authority_references,
+)
 from lexora_ai.db.models import Base
 from lexora_ai.db.unit_of_work import LexoraUnitOfWork
 from lexora_ai.domain import (
@@ -41,6 +44,14 @@ from lexora_ai.domain import (
 from lexora_ai.domain.cases import MAX_MATERIAL_CHARS
 from lexora_ai.infrastructure import DatabaseCaseLawKnowledgePort, DatabaseLegalKnowledgePort
 from lexora_ai.infrastructure.material_parser import MaterialParseError, parse_material_file
+
+
+def test_unavailable_authority_references_are_removed_from_model_output() -> None:
+    content = "规则一[Lknown:C1]，错误引用[Lunknown:C9]，材料引用[M1:C1]。"
+
+    assert _strip_unavailable_authority_references(content, {"Lknown:C1"}) == (
+        "规则一[Lknown:C1]，错误引用，材料引用[M1:C1]。"
+    )
 
 
 class RecordingGateway:

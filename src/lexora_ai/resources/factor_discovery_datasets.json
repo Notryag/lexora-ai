@@ -1,0 +1,23 @@
+[
+  {
+    "name": "cail2018",
+    "version": "2018-all",
+    "publisher": "China AI and Law Challenge",
+    "source_url": "https://cail.oss-cn-qingdao.aliyuncs.com/CAIL2018_ALL_DATA.zip",
+    "source_page": "https://github.com/china-ai-law-challenge/CAIL2018",
+    "archive_size_bytes": 984551626,
+    "source_etag": "EF3EB1C9600502E5D115540CAADC69B8-9615",
+    "acquisition_status": "not_downloaded",
+    "license_review_status": "pending",
+    "permitted_scopes": ["research_planning"]
+  },
+  {
+    "name": "lecardv2",
+    "version": "repository-main",
+    "publisher": "THUIR",
+    "source_url": "https://github.com/THUIR/LeCaRDv2",
+    "acquisition_status": "not_downloaded",
+    "license_review_status": "pending",
+    "permitted_scopes": ["research_planning"]
+  }
+]

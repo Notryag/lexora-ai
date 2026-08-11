@@ -172,3 +172,36 @@ sample. No automatic schedule may enlarge these budgets.
 The initial 120/60 split is an engineering baseline, not a claim of statistical sufficiency. Expansion
 requires a recorded comparison showing unstable factors, inadequate coverage, or measurable retrieval
 or conversation gains that justify the additional model cost.
+
+## Current Implementation
+
+The repository currently implements the non-billable planning stage:
+
+```bash
+uv run lexora-factor-discovery \
+  /path/to/cases.jsonl \
+  --format cail2018 \
+  --name cail2018 \
+  --version 2018-sampled \
+  --issue 盗窃罪 \
+  --model planned-model-id
+```
+
+The command streams JSONL records, stops at the configured scan or candidate-pool limit, normalizes
+only the selected issue, creates deterministic outcome-stratified discovery and evaluation samples,
+packs batches by conservative token estimates, and emits content-addressed cache keys. It never calls
+an LLM and has no execute mode yet.
+
+`within_budget` reports only whether the planned cases, calls and tokens fit the hard limits.
+`execution_ready` is stricter: it also requires a previously verified dataset SHA-256 and complete
+discovery/evaluation sample sizes. Supplying `--sha256` records an acquisition-time verification; the
+planner deliberately does not rescan a potentially gigabyte-sized file to recompute it.
+
+The source registry is stored in
+`src/lexora_ai/resources/factor_discovery_datasets.json`. CAIL2018 is currently recorded as a
+984,551,626-byte remote archive with `acquisition_status=not_downloaded` and
+`license_review_status=pending`. No external research dataset is shipped in the application image.
+
+An acceptance dry run against the 66 synthetic records from the local
+`structured-knowledge-extraction` project scanned 66 records, selected 24 theft cases as a 16/8 split,
+and estimated three future model calls and 7,451 input tokens. Actual model calls and cost were zero.

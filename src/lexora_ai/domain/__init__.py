@@ -16,6 +16,13 @@ from lexora_ai.domain.cases import (
     MaterialKind,
 )
 from lexora_ai.domain.conversations import ConversationTurnRequest, ConversationTurnResult
+from lexora_ai.domain.factor_discovery import (
+    FactorDiscoveryBatch,
+    FactorDiscoveryBudget,
+    FactorDiscoveryCandidate,
+    FactorDiscoveryLoadResult,
+    FactorDiscoveryPlan,
+)
 from lexora_ai.domain.factors import (
     CaseFactor,
     CaseFactorProfile,
@@ -82,6 +89,11 @@ __all__ = [
     "ConversationTurnResult",
     "FollowUpQuestion",
     "FactorDefinition",
+    "FactorDiscoveryBatch",
+    "FactorDiscoveryBudget",
+    "FactorDiscoveryCandidate",
+    "FactorDiscoveryLoadResult",
+    "FactorDiscoveryPlan",
     "FactorMateriality",
     "FactorState",
     "FactorType",

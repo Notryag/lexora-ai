@@ -47,13 +47,19 @@ def _budget(**overrides: int) -> FactorDiscoveryBudget:
     return FactorDiscoveryBudget(**values)
 
 
-def _plan(path: Path, budget: FactorDiscoveryBudget | None = None):
+def _plan(
+    path: Path,
+    budget: FactorDiscoveryBudget | None = None,
+    *,
+    license_review_status: str = "approved",
+):
     return build_factor_discovery_plan(
         path,
         dataset_format="cail2018",
         dataset_name="test-cail",
         dataset_version="fixture-v1",
         dataset_sha256="a" * 64,
+        license_review_status=license_review_status,
         issue="盗窃罪",
         sampling_seed=42,
         model="test-model",
@@ -93,6 +99,7 @@ def test_plan_is_deterministic_and_cache_keys_include_model(tmp_path: Path) -> N
         dataset_name="test-cail",
         dataset_version="fixture-v1",
         dataset_sha256="a" * 64,
+        license_review_status="approved",
         issue="盗窃",
         sampling_seed=42,
         model="other-model",
@@ -116,6 +123,19 @@ def test_plan_reports_token_budget_overflow_without_execution(tmp_path: Path) ->
     assert plan.budget_errors == ("estimated input tokens exceed max_input_tokens",)
 
 
+def test_plan_blocks_model_processing_until_license_review_is_approved(tmp_path: Path) -> None:
+    path = tmp_path / "cases.jsonl"
+    _write_cail_cases(path)
+
+    plan = _plan(path, license_review_status="pending")
+
+    assert plan.within_budget
+    assert not plan.execution_ready
+    assert plan.readiness_errors == (
+        "dataset license review is not approved for model processing",
+    )
+
+
 def test_plan_handles_an_issue_with_no_candidates(tmp_path: Path) -> None:
     path = tmp_path / "cases.jsonl"
     _write_cail_cases(path)
@@ -126,6 +146,7 @@ def test_plan_handles_an_issue_with_no_candidates(tmp_path: Path) -> None:
         dataset_name="test-cail",
         dataset_version="fixture-v1",
         dataset_sha256=None,
+        license_review_status="unrecorded",
         issue="故意伤害",
         sampling_seed=42,
         model="test-model",

@@ -27,6 +27,7 @@ def build_factor_discovery_plan(
     dataset_name: str,
     dataset_version: str,
     dataset_sha256: str | None,
+    license_review_status: str,
     issue: str,
     sampling_seed: int,
     model: str,
@@ -80,6 +81,8 @@ def build_factor_discovery_plan(
     readiness_errors = list(budget_errors)
     if not declared:
         readiness_errors.append("dataset SHA-256 has not been declared from an acquisition check")
+    if license_review_status != "approved":
+        readiness_errors.append("dataset license review is not approved for model processing")
     if len(discovery) < budget.discovery_cases:
         readiness_errors.append("discovery sample is smaller than the requested size")
     if len(evaluation) < budget.evaluation_cases:
@@ -90,6 +93,7 @@ def build_factor_discovery_plan(
         dataset_version=dataset_version,
         dataset_identity=identity,
         dataset_identity_declared=declared,
+        license_review_status=license_review_status,
         issue=issue.strip(),
         sampling_seed=sampling_seed,
         records_scanned=loaded.records_scanned,

@@ -7,9 +7,21 @@
     "source_page": "https://github.com/china-ai-law-challenge/CAIL2018",
     "archive_size_bytes": 984551626,
     "source_etag": "EF3EB1C9600502E5D115540CAADC69B8-9615",
+    "allowed_hostname": "cail.oss-cn-qingdao.aliyuncs.com",
     "acquisition_status": "not_downloaded",
     "license_review_status": "pending",
-    "permitted_scopes": ["research_planning"]
+    "permitted_scopes": ["research_planning"],
+    "members": [
+      {
+        "name": "validation-sample-pool",
+        "path": "final_all_data/exercise_contest/data_valid.json",
+        "local_header_offset": 13209580,
+        "compression_method": 8,
+        "crc32": "bf46ef7b",
+        "compressed_size": 6970018,
+        "uncompressed_size": 24702198
+      }
+    ]
   },
   {
     "name": "lecardv2",

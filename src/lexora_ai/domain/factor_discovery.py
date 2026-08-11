@@ -57,6 +57,7 @@ class FactorDiscoveryPlan:
     dataset_version: str
     dataset_identity: str
     dataset_identity_declared: bool
+    license_review_status: str
     issue: str
     sampling_seed: int
     records_scanned: int

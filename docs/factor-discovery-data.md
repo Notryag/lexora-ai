@@ -194,14 +194,37 @@ an LLM and has no execute mode yet.
 
 `within_budget` reports only whether the planned cases, calls and tokens fit the hard limits.
 `execution_ready` is stricter: it also requires a previously verified dataset SHA-256 and complete
-discovery/evaluation sample sizes. Supplying `--sha256` records an acquisition-time verification; the
-planner deliberately does not rescan a potentially gigabyte-sized file to recompute it.
+discovery/evaluation sample sizes, plus an acquisition manifest whose dataset license review is
+`approved` for model processing. Supplying `--sha256` records an acquisition-time verification; the
+planner deliberately does not rescan a potentially gigabyte-sized file to recompute it. When present,
+`<dataset>.source.json` is loaded automatically as the acquisition manifest.
 
 The source registry is stored in
 `src/lexora_ai/resources/factor_discovery_datasets.json`. CAIL2018 is currently recorded as a
 984,551,626-byte remote archive with `acquisition_status=not_downloaded` and
 `license_review_status=pending`. No external research dataset is shipped in the application image.
 
+CAIL2018 does not need to be downloaded in full. The source manifest records the ZIP central-directory
+metadata for its validation member. The bounded acquisition command downloads only that member:
+
+```bash
+uv run lexora-factor-dataset \
+  storage/factor-discovery/cail2018/2018-all/raw/data_valid.json \
+  --dataset cail2018 \
+  --member validation-sample-pool
+```
+
+The connector requires an allowlisted HTTPS host, matching archive size and ETag, an exact local ZIP
+header, `206 Partial Content`, matching compressed/uncompressed sizes, and a matching CRC. The download
+and decompression ceilings are 16 MiB and 64 MiB respectively. It refuses a server that ignores Range
+requests and never falls back to downloading the complete archive.
+
 An acceptance dry run against the 66 synthetic records from the local
 `structured-knowledge-extraction` project scanned 66 records, selected 24 theft cases as a 16/8 split,
 and estimated three future model calls and 7,451 input tokens. Actual model calls and cost were zero.
+
+The first real bounded acquisition downloaded 6,970,018 compressed bytes from the 984,551,626-byte
+CAIL2018 archive and produced a verified 24,702,198-byte validation JSONL member. A theft dry run scanned
+935 records before reaching its 720-candidate pool, selected the configured 120/60 discovery/evaluation
+split, and estimated seven future model calls with 104,529 input tokens. It remains
+`execution_ready=false` solely because the dataset license review is pending; no model was called.

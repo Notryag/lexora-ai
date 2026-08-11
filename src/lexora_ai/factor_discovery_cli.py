@@ -32,7 +32,21 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidate-pool-multiplier", type=int, default=4)
     parser.add_argument("--max-case-chars", type=int, default=6_000)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--source-manifest",
+        type=Path,
+        help="acquisition manifest; defaults to <dataset>.source.json when present",
+    )
     return parser
+
+
+def _license_review_status(dataset: Path, source_manifest: Path | None) -> str:
+    manifest = source_manifest or dataset.with_suffix(f"{dataset.suffix}.source.json")
+    if not manifest.exists():
+        return "unrecorded"
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    status = payload.get("license_review_status")
+    return status if isinstance(status, str) and status else "unrecorded"
 
 
 def run() -> None:
@@ -55,6 +69,7 @@ def run() -> None:
         dataset_name=args.name,
         dataset_version=args.version,
         dataset_sha256=args.sha256,
+        license_review_status=_license_review_status(args.dataset, args.source_manifest),
         issue=args.issue,
         sampling_seed=args.seed,
         model=args.model,

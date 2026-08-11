@@ -130,8 +130,8 @@ by switching the active immutable version.
 
 ## Initial Acquisition Plan
 
-1. Download CAIL2018 outside Git and verify the archive hash; start with a stratified criminal sample,
-   not the full 2.68-million-document corpus.
+1. Download CAIL2018 outside Git and verify the archive hash; treat it only as a sampling pool and
+   never send the full 2.68-million-document corpus to a model.
 2. Acquire LeCaRDv2 and preserve its expert relevance labels as a fixed retrieval evaluation set.
 3. Expand the existing official-case manifest from seven guiding cases to selected criminal, labor,
    marriage-family and contract issues in the People's Courts Case Database.
@@ -139,3 +139,36 @@ by switching the active immutable version.
    least three independent batches.
 5. Do not publish a learned catalog until the factor extraction and follow-up behavior beat the current
    dynamic-only baseline on a held-out conversation evaluation set.
+
+## Cost And Sampling Limits
+
+The first experiment is deliberately small and covers one issue only. Its default budget is:
+
+| Limit | Default |
+|---|---:|
+| discovery sample | 120 cases |
+| held-out evaluation sample | 60 cases |
+| total unique cases sent to an LLM | 180 cases |
+| discovery / merge / extraction model calls | 30 calls |
+| cumulative input tokens | 300,000 tokens |
+| cumulative output tokens | 40,000 tokens |
+
+Cases are stratified by the available outcome labels and relevant metadata before sampling. Discovery
+batches are packed by estimated tokens rather than by a fixed document count. Only the fact and
+reasoning fields required by the current experiment are sent; full documents, party identities and
+irrelevant procedural boilerplate are excluded.
+
+The future CLI must default to a dry run that prints the dataset version, sampling seed, selected case
+count, estimated token usage and configured hard limits. Execution requires an explicit flag. It must
+stop before any case-count, call-count, input-token or output-token limit is exceeded. Provider cost may
+also be configured as an additional hard limit once the selected model has a versioned price entry;
+token limits remain authoritative when price metadata is missing or stale.
+
+Every batch result is cached by dataset hash, normalization version, prompt version, model identifier
+and ordered input hashes. A retry or resumed run must reuse completed batches. Increasing a limit
+creates a new run plan and processes only newly selected cases; it never silently restarts the previous
+sample. No automatic schedule may enlarge these budgets.
+
+The initial 120/60 split is an engineering baseline, not a claim of statistical sufficiency. Expansion
+requires a recorded comparison showing unstable factors, inadequate coverage, or measurable retrieval
+or conversation gains that justify the additional model cost.

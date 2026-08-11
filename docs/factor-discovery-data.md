@@ -276,9 +276,19 @@ collapsed into a judgment merely because its text matches. Same case number with
 hashes is reported as a cross-source text-version group. Records without a case number remain distinct
 unless their exact same-kind content hash matches; the dry run does not use fuzzy similarity to guess.
 
+Before parsing, the command hashes each complete local source and compares it with the commit-pinned
+SHA-256 in the dataset registry. A mismatch fails the run. The report carries the actual source hash,
+verification result, source byte count, license-review status, permitted scopes, normalization version
+and a deterministic plan identity derived from the normalized record identities. It contains no case
+text. This makes repeated dry runs auditable without turning pending-license data into a normalized
+corpus.
+
 The current joint dry run scanned and normalized all 2,643 records with zero rejections: 300
 CAIL2022-LCR case queries, 800 LeCaRDv2 case queries and 1,543 STARD consultations. LeCaRDv2 supplied
 791 canonical case numbers. Across these three downloaded query samples, no duplicate source ID, case
 number or same-kind content hash was found. There are 309 case records without a reliable case number,
 so this result is not evidence that the larger source corpora contain no overlap. The dry run caps each
 source file at 32 MiB and 5,000 records, writes no normalized corpus, and makes zero model calls.
+All three local source hashes matched their registry entries. The current reproducible report uses
+`research-normalization-v1` and plan identity
+`sha256:7d3ced01ca7c6b831a61f68fef64a7cfcabfe55ef7786c5671e08db1e0c052a0`.

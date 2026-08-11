@@ -87,16 +87,11 @@ def test_adapters_normalize_all_registered_source_shapes(tmp_path: Path) -> None
     assert lecard_result.records[0].case_number == "(2020)京0101刑初1号"
     assert lecard_result.records[0].labels == ("盗窃罪", "article:264")
     assert stard_result.records[0].record_kind == ResearchRecordKind.consultation
-    assert stard_result.records[0].labels == (
-        "中华人民共和国民法典第一千零七十九条",
-    )
+    assert stard_result.records[0].labels == ("中华人民共和国民法典第一千零七十九条",)
 
 
 def test_case_number_normalization_handles_full_width_parentheses_and_spaces() -> None:
-    assert (
-        canonical_case_number("判决书 （ 2020 ） 京0101刑初第001号")
-        == "(2020)京0101刑初1号"
-    )
+    assert canonical_case_number("判决书 （ 2020 ） 京0101刑初第001号") == "(2020)京0101刑初1号"
 
 
 def test_lecard_adapter_keeps_case_with_facts_but_no_title(tmp_path: Path) -> None:
@@ -132,6 +127,34 @@ def test_adapter_rejects_source_over_file_size_limit(tmp_path: Path) -> None:
             dataset_name="stard",
             dataset_version="fixture",
             max_file_bytes=1,
+        )
+
+
+def test_adapter_verifies_registered_source_hash(tmp_path: Path) -> None:
+    source = tmp_path / "stard.json"
+    source.write_text("[]", encoding="utf-8")
+    expected = sha256(source.read_bytes()).hexdigest()
+
+    result = load_research_dataset(
+        source,
+        dataset_name="stard",
+        dataset_version="fixture",
+        expected_source_sha256=expected,
+        license_review_status="pending",
+        permitted_scopes=("research_planning",),
+    )
+
+    assert result.source_sha256 == expected
+    assert result.source_hash_verified
+    assert result.license_review_status == "pending"
+    assert result.permitted_scopes == ("research_planning",)
+
+    with pytest.raises(ValueError, match="does not match source registry"):
+        load_research_dataset(
+            source,
+            dataset_name="stard",
+            dataset_version="fixture",
+            expected_source_sha256="0" * 64,
         )
 
 
@@ -193,6 +216,20 @@ def test_same_case_and_content_is_not_reported_as_a_text_version() -> None:
     assert plan.duplicate_case_numbers == 1
     assert plan.cross_source_case_number_groups == ()
     assert len(plan.cross_source_content_groups) == 1
+
+
+def test_plan_identity_is_deterministic_and_content_addressed() -> None:
+    first = _record("lecardv2", "source-a", "案件事实")
+    changed = _record("lecardv2", "source-a", "修改后的案件事实")
+
+    baseline = build_research_normalization_plan([_loaded("lecardv2", first)])
+    repeated = build_research_normalization_plan([_loaded("lecardv2", first)])
+    modified = build_research_normalization_plan([_loaded("lecardv2", changed)])
+
+    assert baseline.normalization_version == "research-normalization-v1"
+    assert baseline.plan_identity == repeated.plan_identity
+    assert baseline.plan_identity != modified.plan_identity
+    assert "案件事实" not in json.dumps(baseline.to_dict(), ensure_ascii=False)
 
 
 def _record(

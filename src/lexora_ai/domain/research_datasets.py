@@ -36,6 +36,11 @@ class ResearchDatasetLoadResult:
     records_rejected: int
     rejection_reasons: dict[str, int]
     stopped_at_limit: bool
+    source_sha256: str = ""
+    source_size_bytes: int = 0
+    source_hash_verified: bool = False
+    license_review_status: str = "unrecorded"
+    permitted_scopes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +51,8 @@ class ResearchDuplicateGroup:
 
 @dataclass(frozen=True, slots=True)
 class ResearchNormalizationPlan:
+    normalization_version: str
+    plan_identity: str
     sources: tuple[dict[str, object], ...]
     total_records: int
     unique_records: int

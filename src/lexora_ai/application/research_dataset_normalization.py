@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from collections import Counter, defaultdict
 from collections.abc import Callable
+from hashlib import sha256
 
 from lexora_ai.domain.research_datasets import (
     NormalizedResearchRecord,
@@ -10,6 +12,8 @@ from lexora_ai.domain.research_datasets import (
     ResearchNormalizationPlan,
     ResearchRecordKind,
 )
+
+RESEARCH_NORMALIZATION_VERSION = "research-normalization-v1"
 
 
 def build_research_normalization_plan(
@@ -44,6 +48,8 @@ def build_research_normalization_plan(
     source_summaries = tuple(_source_summary(source) for source in loaded_sources)
     duplicate_records = sum(duplicate_reasons.values())
     return ResearchNormalizationPlan(
+        normalization_version=RESEARCH_NORMALIZATION_VERSION,
+        plan_identity=_plan_identity(records, loaded_sources, duplicate_group_limit),
         sources=source_summaries,
         total_records=len(records),
         unique_records=unique_records,
@@ -88,6 +94,11 @@ def _source_summary(source: ResearchDatasetLoadResult) -> dict[str, object]:
         "records_normalized": len(source.records),
         "records_rejected": source.records_rejected,
         "rejection_reasons": source.rejection_reasons,
+        "source_sha256": source.source_sha256,
+        "source_size_bytes": source.source_size_bytes,
+        "source_hash_verified": source.source_hash_verified,
+        "license_review_status": source.license_review_status,
+        "permitted_scopes": list(source.permitted_scopes),
         "records_with_case_number": sum(bool(record.case_number) for record in source.records),
         "record_kinds": dict(sorted(kinds.items())),
         "stopped_at_limit": source.stopped_at_limit,
@@ -121,3 +132,35 @@ def _cross_source_groups(
         if len(results) == limit:
             break
     return tuple(results)
+
+
+def _plan_identity(
+    records: list[NormalizedResearchRecord],
+    sources: list[ResearchDatasetLoadResult],
+    duplicate_group_limit: int,
+) -> str:
+    payload = {
+        "normalization_version": RESEARCH_NORMALIZATION_VERSION,
+        "duplicate_group_limit": duplicate_group_limit,
+        "sources": [
+            {
+                "dataset_name": source.dataset_name,
+                "dataset_version": source.dataset_version,
+                "source_sha256": source.source_sha256,
+                "records_scanned": source.records_scanned,
+                "stopped_at_limit": source.stopped_at_limit,
+            }
+            for source in sources
+        ],
+        "records": [
+            {
+                "reference": record.reference,
+                "record_kind": record.record_kind.value,
+                "case_number": record.case_number,
+                "content_hash": record.content_hash,
+            }
+            for record in records
+        ],
+    }
+    rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return f"sha256:{sha256(rendered.encode()).hexdigest()}"

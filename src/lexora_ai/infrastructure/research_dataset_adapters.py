@@ -28,13 +28,26 @@ def load_research_dataset(
     max_records: int = 5_000,
     max_text_chars: int = 30_000,
     max_file_bytes: int = 32 * 1024 * 1024,
+    expected_source_sha256: str | None = None,
+    license_review_status: str = "unrecorded",
+    permitted_scopes: tuple[str, ...] = (),
 ) -> ResearchDatasetLoadResult:
     if dataset_name not in SUPPORTED_RESEARCH_DATASETS:
         raise ValueError(f"unsupported research dataset: {dataset_name}")
     if max_records <= 0 or max_text_chars <= 0 or max_file_bytes <= 0:
         raise ValueError("normalization limits must be positive")
-    if path.stat().st_size > max_file_bytes:
+    source_size_bytes = path.stat().st_size
+    if source_size_bytes > max_file_bytes:
         raise ValueError("research dataset exceeds max_file_bytes")
+    source_sha256 = _file_sha256(path)
+    source_hash_verified = False
+    if expected_source_sha256 is not None:
+        expected = expected_source_sha256.strip().lower()
+        if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
+            raise ValueError("expected source SHA-256 is invalid")
+        if source_sha256 != expected:
+            raise ValueError("research dataset SHA-256 does not match source registry")
+        source_hash_verified = True
 
     records: list[NormalizedResearchRecord] = []
     scanned = 0
@@ -68,6 +81,11 @@ def load_research_dataset(
         records_rejected=rejected,
         rejection_reasons=dict(sorted(rejection_reasons.items())),
         stopped_at_limit=stopped_at_limit,
+        source_sha256=source_sha256,
+        source_size_bytes=source_size_bytes,
+        source_hash_verified=source_hash_verified,
+        license_review_status=license_review_status,
+        permitted_scopes=tuple(dict.fromkeys(permitted_scopes)),
     )
 
 
@@ -79,10 +97,7 @@ def canonical_case_number(value: str | None) -> str | None:
     match = _CASE_NUMBER_PATTERN.search(normalized)
     if match is None:
         return None
-    return (
-        f"({match.group('year')}){match.group('body')}"
-        f"{int(match.group('serial'))}号"
-    )
+    return f"({match.group('year')}){match.group('body')}{int(match.group('serial'))}号"
 
 
 def _normalize_payload(
@@ -241,11 +256,7 @@ def _required_identifier(value: object, label: str) -> str:
 def _string_values(value: object) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
-    return tuple(
-        text
-        for item in value
-        if isinstance(item, str) and (text := item.strip())
-    )
+    return tuple(text for item in value if isinstance(item, str) and (text := item.strip()))
 
 
 def _identifier_values(value: object) -> tuple[str, ...]:
@@ -261,3 +272,11 @@ def _identifier_values(value: object) -> tuple[str, ...]:
 def _identity_text(value: str) -> str:
     normalized = unicodedata.normalize("NFKC", value)
     return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _file_sha256(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()

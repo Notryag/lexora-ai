@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from lexora_ai.domain.factors import FactorState
+from lexora_ai.domain.factors import FactorMateriality, FactorState, FactorType
 
 
 class LegalTurnIntent(StrEnum):
@@ -14,14 +14,40 @@ class LegalTurnIntent(StrEnum):
 
 
 class LegalTurnFactorUpdate(BaseModel):
-    key: str = Field(min_length=1, max_length=120)
+    key: str = Field(
+        min_length=3,
+        max_length=120,
+        pattern=r"^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$",
+        description=(
+            "AI-discovered stable semantic key. Reuse an existing case factor key whenever the "
+            "same fact dimension already exists."
+        ),
+    )
+    label: str = Field(min_length=1, max_length=120)
+    type: FactorType
     state: FactorState
     value: bool | int | float | str | None = None
+    materiality: FactorMateriality = FactorMateriality.medium
+    question: str | None = Field(
+        default=None,
+        max_length=300,
+        description="Neutral factual question used only when this factor is unknown and material.",
+    )
 
-    @field_validator("key")
+    @field_validator("key", "label", "question", mode="before")
     @classmethod
-    def normalize_key(cls, value: str) -> str:
-        return value.strip()
+    def normalize_text(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        return value.strip() or None
+
+    @model_validator(mode="after")
+    def validate_unknown_factor(self) -> LegalTurnFactorUpdate:
+        if self.state == FactorState.unknown:
+            self.value = None
+            if not self.question:
+                raise ValueError("unknown factors require a follow-up question")
+        return self
 
 
 class LegalTurnPreparation(BaseModel):
@@ -36,7 +62,7 @@ class LegalTurnPreparation(BaseModel):
     authority_queries: list[str] = Field(default_factory=list, max_length=3)
     material_query: str | None = Field(default=None, max_length=300)
     case_law_query: str | None = Field(default=None, max_length=300)
-    decision_variables: list[str] = Field(default_factory=list, max_length=2)
+    decision_factor_keys: list[str] = Field(default_factory=list, max_length=2)
     factor_updates: list[LegalTurnFactorUpdate] = Field(default_factory=list, max_length=12)
 
     @field_validator(
@@ -59,7 +85,7 @@ class LegalTurnPreparation(BaseModel):
         "disputed_issues",
         "evidence_notes",
         "authority_queries",
-        "decision_variables",
+        "decision_factor_keys",
     )
     @classmethod
     def normalize_items(cls, value: list[str]) -> list[str]:
@@ -80,7 +106,7 @@ class LegalTurnPreparation(BaseModel):
                 self.authority_queries,
                 self.material_query,
                 self.case_law_query,
-                self.decision_variables,
+                self.decision_factor_keys,
                 self.factor_updates,
             )
         ):

@@ -66,8 +66,8 @@ full multi-agent graph. The recommended path is:
 ~~~text
 CaseIntakeService
     +----> Matter / issue classifier
-    +----> FactorSchemaRegistry      core factors + domain extensions
-    +----> StructuredFactorExtractor current turn + prior case state
+    +----> StructuredFactorExtractor AI discovers factors from current turn + prior case state
+    +----> LearnedFactorCatalog      optional, versioned priors discovered from case corpora
     +----> SufficiencyGate           answer now vs ask 1~2 high-impact questions
     +----> RetrievalPlanner          statutes / interpretations / cases from factors
     +----> AnswerComposer            provisional analysis first, then bounded follow-up
@@ -94,7 +94,7 @@ strengths from different projects while keeping one coherent product contract.
 
 | Reference | Worth borrowing now | Defer or avoid as the base path |
 |---|---|---|
-| structured-knowledge-extraction | modular core + extension factor schema; factor-oriented intake; missing-factor ranking | synthetic-data archetype clustering as the backbone of general legal consultation |
+| structured-knowledge-extraction | bottom-up factor discovery from case corpora; AI-driven structured extraction; modular learned schema; missing-factor ranking | synthetic-data archetype clustering as the backbone of general legal consultation |
 | LeCoDe | legal consultation should be evaluated as multi-turn fact gathering plus advice quality; key-fact and fact-importance framing | benchmark-style interaction loops directly in product UX |
 | DLawBench | separate client belief from legally material fact; explicitly test information gathering and grounded memo writing | turning every conversation into a long lawyer interview regardless of user goal |
 | FactFiller | dynamically generate bounded follow-up questions for vague users; tie questions to downstream legal retrieval | full questionnaire-first interaction before any useful provisional answer |
@@ -124,12 +124,13 @@ later
 
 The next implementation slice should be built in this order:
 
-1. FactorSchemaRegistry
-2. CaseFactorProfile
-3. StructuredFactorExtractor
-4. SufficiencyGate
-5. RetrievalPlanner
-6. AnswerComposer adjustments
+1. Dynamic StructuredFactorExtractor
+2. CaseFactorProfile state merge
+3. SufficiencyGate
+4. RetrievalPlanner
+5. Case-corpus FactorDiscoveryPipeline
+6. Versioned LearnedFactorCatalog
+7. AnswerComposer adjustments
 
 The order matters. Lexora should not keep expanding prompts before these contracts exist.
 Retrieval quality, follow-up quality, and final answer structure should all be driven by the factor
@@ -140,7 +141,8 @@ profile and sufficiency gate rather than by free-form model behavior.
 For every conversation turn, a Lexora-owned middleware requires one successful
 `prepare_legal_turn` call before the model may produce a final response. The structured call classifies
 the turn, extracts only user-stated case facts, identifies one legal issue, supplies up to three focused
-authority queries, and names at most two outcome-changing variables. For legal questions the tool runs
+authority queries, dynamically defines relevant factual factors, and selects at most two unknown
+outcome-changing factor keys. For legal questions the tool runs
 the raw user question and focused queries through verified-statute retrieval; social turns skip RAG.
 The Agent may then use separate case-material, statute, and guiding-case tools for supplemental searches.
 Tool closures inject the trusted case and user context, while the model never supplies case or user IDs.
@@ -207,7 +209,7 @@ outcome.
 The personal workspace persists a user-editable `CaseProfile` on each legal case. It contains case
 type, parties, claims, key facts, disputed issues, evidence notes, and missing information. The
 required `prepare_legal_turn` tool stages concise facts explicitly stated or confirmed by the user and
-replaces missing information with the current turn's outcome-changing variables. Tool closures retain
+replaces missing information with questions resolved from the current turn's unknown factor keys. Tool closures retain
 trusted case context; the model never supplies a case or user identifier. Updates remain staged in
 memory until the Run completes, then commit in the same transaction as the assistant message. Failed
 or cancelled Runs leave the durable profile unchanged.
@@ -218,19 +220,17 @@ system still labels it as unverified case data and never treats it as legal auth
 a projection of case state for inspection and correction, not a required form or a separate
 generation workflow. Conversation history remains the durable record.
 
-The next evolution is to make this profile more explicitly factor-oriented: core factors such as
-jurisdiction, timeline, parties, claims, evidence, and disputed facts should remain common across
-the product, while domain slices add their own extensions, for example theft amount / residential
-entry / prior conviction, termination reason / service years / salary base, or marital acquisition
-time / registration / down-payment source. Lexora should avoid one giant universal schema, but it
-should also avoid leaving every turn to an unbounded prompt. The intended shape is a modular schema:
+The profile is factor-oriented without requiring a hand-written list of legal fields. On each turn the
+model discovers only factual dimensions that materially affect the current issue, emits their stable
+keys and metadata through a bounded structured tool, and reuses existing keys from the case profile.
+Application code validates structure, merges state, and bounds follow-up questions; it does not match
+legal keywords or decide which facts matter. The intended evolution is:
 
 ~~~text
-core factors
-    +----> criminal extensions
-    +----> labor extensions
-    +----> family extensions
-    +----> contract extensions
+current dialogue + current case profile
+    +----> AI-discovered case factors
+    +----> deterministic state merge / sufficiency gate
+    +----> optional learned factor priors from versioned case-corpus discovery
 ~~~
 
 CaseFactorProfile is not an AI-only analysis artifact. It should be treated as product-owned case
@@ -254,9 +254,22 @@ completed persisted message pairs. Later turns reuse the committed runtime threa
 successful checkpoint, and add only the new user turn. Failed or cancelled partial checkpoints never
 advance either Thread pointer. The current case profile remains product-owned context, and the Agent may
 retrieve private evidence, verified legal authorities, or reviewed cases through separate tools.
-The preparation schema limits each turn to two prioritized decision variables. The final response
-must answer from the prepared facts and authorities before asking about those variables; missing facts
-do not block a bounded provisional analysis.
+The preparation schema limits each turn to two prioritized decision factor keys. The sufficiency gate
+accepts only factors present in the merged profile and filters factors already asserted, denied, or
+conflicting before returning their canonical questions. The final response must answer from prepared
+facts and authorities before asking the remaining questions; missing facts do not block a bounded
+provisional analysis.
+
+Factor discovery has two different lifecycles. Online extraction creates and updates factors scoped to
+one user's case, so an unseen matter type remains usable immediately. Offline discovery reads batches
+of versioned judgments, lets the model freely identify candidate decision factors, and performs a
+second model pass for merge, deduplication, and normalization. Reviewed results are published as a
+versioned `LearnedFactorCatalog` and supplied to online extraction as priors, never as mandatory fields.
+One conversation cannot mutate the global catalog. Existing guiding-case ingestion can supply reviewed
+examples, but a representative judgment corpus, provenance controls, discovery evaluation, and a
+publish/reject workflow are required before the catalog may influence production conversations.
+Prototype clustering and quantitative outcome prediction remain deferred until corpus quality and bias
+evaluation justify them.
 
 The browser submits one streaming HTTP request per turn. North `messages` events become incremental
 assistant text; the final `values` event completes the Run without replaying that text. The user

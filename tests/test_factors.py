@@ -1,42 +1,53 @@
 from __future__ import annotations
 
-from lexora_ai.domain import CaseFactorProfile, FactorSchemaRegistry
+from lexora_ai.domain import CaseFactorProfile, LegalTurnFactorUpdate
 
 
-def test_factor_registry_matches_labor_domain() -> None:
-    registry = FactorSchemaRegistry()
-
-    domains, definitions = registry.definitions_for(
-        case_type="劳动争议",
-        legal_issue="解除劳动合同的经济补偿",
+def test_factor_profile_accepts_ai_discovered_factor() -> None:
+    profile = CaseFactorProfile().apply_updates(
+        [
+            LegalTurnFactorUpdate(
+                key="relationship.holds_out_as_spouses",
+                label="是否以夫妻身份生活",
+                type="boolean",
+                state="denied",
+                value=False,
+                materiality="high",
+                question="双方是否曾对外以夫妻身份生活？",
+            )
+        ]
     )
 
-    assert domains == ["labor.termination"]
-    assert "labor.termination.reason" in {definition.key for definition in definitions}
-    assert "core.procedural_stage" in {definition.key for definition in definitions}
+    assert len(profile.factors) == 1
+    assert profile.factors[0].key == "relationship.holds_out_as_spouses"
+    assert profile.factors[0].state == "denied"
+    assert profile.factors[0].value is False
 
 
-def test_factor_registry_does_not_treat_all_criminal_cases_as_theft() -> None:
-    registry = FactorSchemaRegistry()
+def test_factor_profile_reuses_existing_key_without_duplicate() -> None:
+    first = LegalTurnFactorUpdate(
+        key="employment.service_years",
+        label="工作年限",
+        type="numeric",
+        state="unknown",
+        materiality="high",
+        question="你在公司工作了多久？",
+    )
+    profile = CaseFactorProfile().apply_updates([first])
 
-    domains, _ = registry.definitions_for(
-        case_type="刑事案件",
-        legal_issue="故意伤害案件怎么处理？",
+    updated = profile.apply_updates(
+        [
+            LegalTurnFactorUpdate(
+                key="employment.service_years",
+                label="工作年限",
+                type="numeric",
+                state="asserted",
+                value=4,
+                materiality="high",
+            )
+        ]
     )
 
-    assert "criminal.theft" not in domains
-
-
-def test_case_factor_profile_seeded_preserves_existing_values() -> None:
-    registry = FactorSchemaRegistry()
-    domains, definitions = registry.definitions_for(
-        case_type="离婚财产分割",
-        legal_issue="房产如何分割",
-    )
-
-    profile = CaseFactorProfile().seeded(domains=domains, definitions=definitions)
-    updated = profile.seeded(domains=domains, definitions=definitions)
-
-    assert updated.active_domains == ["family.divorce_property"]
-    assert len(updated.factors) == len(profile.factors)
-    assert "family.divorce_property.registration" in {factor.key for factor in updated.factors}
+    assert len(updated.factors) == 1
+    assert updated.factors[0].value == 4
+    assert updated.factors[0].question == "你在公司工作了多久？"

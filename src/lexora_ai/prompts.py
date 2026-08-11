@@ -9,10 +9,8 @@ from lexora_ai.application.ports import (
     ConversationEvidenceChunk,
     ConversationLegalChunk,
 )
-from lexora_ai.domain import CaseAnalysisRequest, ConversationTurnRequest, FactorSchemaRegistry
+from lexora_ai.domain import CaseAnalysisRequest, ConversationTurnRequest
 from lexora_ai.material_context import build_material_context, retrieve_material_context
-
-_FACTOR_REGISTRY = FactorSchemaRegistry()
 
 LEXORA_SYSTEM_PROMPT = """你是法析 Lexora，一名严谨的法律案例分析助手。
 
@@ -34,15 +32,21 @@ LEXORA_SYSTEM_PROMPT = """你是法析 Lexora，一名严谨的法律案例分�
 6. 不提供保证胜诉、精确胜率或确定性裁判预测。
 
 每轮对话先使用运行时强制提供的 prepare_legal_turn。该工具返回的 turn_preparation 是本轮
-法律问题和决策变量，case_profile 是用户陈述的案件状态，检索结果是本轮唯一可引用的依据。
-如果 case_data 中提供 factor_schema，factor_updates 只能使用其中给出的 key，且只能表达用户
-本轮明确陈述、否认或形成冲突的案件要素。
+法律问题和决策要素，case_profile 是用户陈述的案件状态，检索结果是本轮唯一可引用的依据。
+factor_profile 是 Agent 从对话中动态形成的案件要素画像，不是预设案由表单。你应自主识别会
+实质影响当前分析的事实维度，为新维度创建稳定、语义化的英文 key；已有相同维度时必须复用
+case_profile 中的原 key。factor_updates 只能表达用户本轮明确陈述、否认、仍未知或形成冲突的
+事实，不能把罪名成立、责任大小、裁判预测、法律规则或通用风险提示作为 factor。
 不要在工具完成前回答，也不要绕过分析包重新臆测用户事实。
 
 普通寒暄简短自然地回应。法律问题先回答用户当前问题，再说明本案已经出现的有利、不利或中性
 因素，最后仅在确有必要时追问 response_contract.follow_up_questions 中最多两个问题。事实不完整
 不等于拒绝分析：应给出带假设或条件分支的暂时结论。全国规则授权地区另定标准而尚无当地依据
 时，必须展示条件分支，不替用户选择一个标准。
+
+不得把 case_profile 中 state 为 asserted 或 denied 的要素重新写成未决条件、相反假设或追问；
+除非需要明确指出资料冲突，否则应直接按用户已经陈述的事实分析。最终答复不得自行增加
+response_contract.follow_up_questions 之外的问题。
 
 未要求完整报告时保持紧凑，不罗列本案尚未出现的通用量刑或责任因素。法定区间不等于具体
 结果；不得把未经核验的案例均值、中位数或模型预测包装成可靠刑期、赔偿额或胜率。引用必须由
@@ -86,26 +90,6 @@ def build_case_analysis_prompt(request: CaseAnalysisRequest) -> str:
     )
 
 
-def _factor_schema_payload(case_type: str | None, user_message: str) -> dict[str, object]:
-    domains, definitions = _FACTOR_REGISTRY.definitions_for(
-        case_type=case_type,
-        legal_issue=user_message,
-    )
-    return {
-        "active_domains": domains,
-        "definitions": [
-            {
-                "key": definition.key,
-                "label": definition.label,
-                "type": definition.type.value,
-                "materiality": definition.materiality.value,
-                "question": definition.question,
-            }
-            for definition in definitions
-        ],
-    }
-
-
 def build_conversation_prompt(
     request: ConversationTurnRequest,
     *,
@@ -124,10 +108,6 @@ def build_conversation_prompt(
     else:
         retrieved_chunks = retrieve_material_context(retrieval_query, request.materials)
     payload = {
-        "factor_schema": _factor_schema_payload(
-            request.case_profile.case_type if request.case_profile else None,
-            request.message,
-        ),
         "case_title": request.case_title,
         "case_profile": (
             request.case_profile.model_dump(mode="json") if request.case_profile else None

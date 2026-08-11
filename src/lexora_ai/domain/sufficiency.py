@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from lexora_ai.domain.factors import CaseFactorProfile, FactorMateriality, FactorState
+from lexora_ai.domain.factors import CaseFactorProfile, FactorState
 from lexora_ai.domain.legal_turns import LegalTurnIntent
 
 
@@ -22,28 +22,22 @@ class SufficiencyGate:
         *,
         intent: LegalTurnIntent,
         factor_profile: CaseFactorProfile,
-        decision_variables: list[str],
+        decision_factor_keys: list[str],
     ) -> SufficiencyDecision:
         if intent != LegalTurnIntent.legal_question:
             return SufficiencyDecision(answer_now=True)
 
         questions: list[FollowUpQuestion] = []
-        seen_questions: set[str] = set()
+        factors_by_key = {factor.key: factor for factor in factor_profile.factors}
+        seen_factor_keys: set[str] = set()
 
-        for variable in decision_variables:
-            text = variable.strip()
-            if text and text not in seen_questions:
-                questions.append(FollowUpQuestion(question=text))
-                seen_questions.add(text)
-            if len(questions) == 2:
-                return SufficiencyDecision(answer_now=True, follow_up_questions=questions)
-
-        for factor in factor_profile.factors:
+        for key in decision_factor_keys:
+            factor = factors_by_key.get(key.strip())
+            if factor is None or factor.key in seen_factor_keys:
+                continue
             if factor.state != FactorState.unknown:
                 continue
-            if factor.materiality != FactorMateriality.high:
-                continue
-            if not factor.question or factor.question in seen_questions:
+            if not factor.question:
                 continue
             questions.append(
                 FollowUpQuestion(
@@ -51,7 +45,7 @@ class SufficiencyGate:
                     question=factor.question,
                 )
             )
-            seen_questions.add(factor.question)
+            seen_factor_keys.add(factor.key)
             if len(questions) == 2:
                 break
 

@@ -59,6 +59,9 @@ class RecordingCaseMemory:
         self.profile = CaseProfile(missing_information=["房屋购买时间"])
         self.patches = []
 
+    async def get_profile(self):
+        return self.profile.model_copy(deep=True)
+
     async def update_profile(self, patch):
         self.patches.append(patch)
         self.profile = patch.apply(self.profile)
@@ -104,41 +107,51 @@ async def test_prepare_legal_turn_stages_profile_and_runs_multiple_authority_que
         {
             "intent": "legal_question",
             "legal_issue": "解除劳动合同的经济补偿",
-            "case_type": "离婚财产分割",
-            "parties": ["用户（妻子）", "配偶（丈夫）"],
-            "key_facts": ["房屋在婚后购买", "房屋登记在双方名下"],
+            "case_type": "劳动合同解除争议",
+            "parties": ["用户（劳动者）", "公司（用人单位）"],
+            "key_facts": ["公司已经通知用户解除劳动合同"],
             "authority_queries": ["经济补偿计算标准", "违法解除赔偿金"],
-            "decision_variables": ["解除理由", "工作年限"],
+            "decision_factor_keys": [
+                "labor.termination.reason",
+                "labor.termination.service_years",
+            ],
             "factor_updates": [
                 {
-                    "key": "family.divorce_property.acquisition_time",
-                    "state": "asserted",
-                    "value": "婚后购买",
+                    "key": "labor.termination.reason",
+                    "label": "解除理由",
+                    "type": "text",
+                    "state": "unknown",
+                    "materiality": "high",
+                    "question": "公司或劳动者提出解除的理由是什么？",
                 },
                 {
-                    "key": "family.divorce_property.registration",
-                    "state": "asserted",
-                    "value": "双方名下",
+                    "key": "labor.termination.service_years",
+                    "label": "工作年限",
+                    "type": "numeric",
+                    "state": "unknown",
+                    "materiality": "high",
+                    "question": "一共工作了多久？",
                 },
             ],
         }
     )
 
-    assert result["case_profile"]["case_type"] == "离婚财产分割"
-    assert result["case_profile"]["missing_information"] == ["解除理由", "工作年限"]
-    assert result["case_profile"]["factor_profile"]["active_domains"] == [
-        "labor.termination",
-        "family.divorce_property",
+    assert result["case_profile"]["case_type"] == "劳动合同解除争议"
+    assert result["case_profile"]["missing_information"] == [
+        "公司或劳动者提出解除的理由是什么？",
+        "一共工作了多久？",
     ]
-    factor_values = {
-        factor["key"]: factor["value"]
+    factor_states = {
+        factor["key"]: factor["state"]
         for factor in result["case_profile"]["factor_profile"]["factors"]
-        if factor["state"] != "unknown"
     }
-    assert factor_values["family.divorce_property.acquisition_time"] == "婚后购买"
-    assert factor_values["family.divorce_property.registration"] == "双方名下"
-    assert memory.patches[0].key_facts == ["房屋在婚后购买", "房屋登记在双方名下"]
-    assert memory.patches[1].factor_profile is not None
+    assert factor_states == {
+        "labor.termination.reason": "unknown",
+        "labor.termination.service_years": "unknown",
+    }
+    assert memory.patches[0].key_facts == ["公司已经通知用户解除劳动合同"]
+    assert memory.patches[0].factor_profile is not None
+    assert len(memory.patches) == 1
     assert [call for call in retrieval.calls if call[0] == "legal"] == [
         ("legal", "公司辞退我能要什么补偿？"),
         ("legal", "经济补偿计算标准"),
@@ -147,8 +160,14 @@ async def test_prepare_legal_turn_stages_profile_and_runs_multiple_authority_que
     assert len(result["legal_authorities"]) == 3
     assert len(result["turn_preparation"]["authority_query_coverage"]) == 3
     assert result["response_contract"]["follow_up_questions"] == [
-        {"factor_key": None, "question": "解除理由"},
-        {"factor_key": None, "question": "工作年限"},
+        {
+            "factor_key": "labor.termination.reason",
+            "question": "公司或劳动者提出解除的理由是什么？",
+        },
+        {
+            "factor_key": "labor.termination.service_years",
+            "question": "一共工作了多久？",
+        },
     ]
     assert result["response_contract"]["maximum_follow_up_questions"] == 2
 
@@ -165,7 +184,17 @@ async def test_prepare_legal_turn_interleaves_ranked_query_results() -> None:
             "intent": "legal_question",
             "legal_issue": "盗窃罪量刑",
             "authority_queries": ["盗窃数额标准", "累犯成立条件"],
-            "decision_variables": ["前罪刑罚执行完毕时间"],
+            "decision_factor_keys": ["criminal.theft.prior_conviction"],
+            "factor_updates": [
+                {
+                    "key": "criminal.theft.prior_conviction",
+                    "label": "前科及累犯相关情况",
+                    "type": "text",
+                    "state": "unknown",
+                    "materiality": "high",
+                    "question": "前罪刑罚何时执行完毕？",
+                }
+            ],
         }
     )
 
@@ -225,3 +254,72 @@ async def test_prepare_social_turn_skips_retrieval_and_case_updates() -> None:
     assert result["legal_authorities"] == []
     assert retrieval.calls == []
     assert memory.patches == []
+
+
+@pytest.mark.asyncio
+async def test_prepare_legal_turn_does_not_reask_denied_relationship_factor() -> None:
+    memory = RecordingCaseMemory()
+    tools = {
+        tool.name: tool
+        for tool in build_lexora_tools(
+            RecordingRetrieval(),
+            memory,
+            user_message=(
+                "我女朋友结婚了，但已经和她老公分居好几年，是不是算自动离婚了？"
+                "我们没以夫妻的名义同居算重婚吗？"
+            ),
+        )
+    }
+
+    result = await tools["prepare_legal_turn"].ainvoke(
+        {
+            "intent": "legal_question",
+            "legal_issue": "分居是否自动解除婚姻及是否构成重婚",
+            "case_type": "婚姻关系状态与关系重叠",
+            "key_facts": [
+                "女朋友仍处于婚姻关系中并已与其配偶分居多年",
+                "用户与女朋友没有以夫妻名义同居",
+            ],
+            "authority_queries": ["分居是否自动解除婚姻关系", "重婚罪构成要件"],
+            "decision_factor_keys": [
+                "relationship.holds_out_as_spouses",
+                "relationship.second_marriage_registered",
+            ],
+            "factor_updates": [
+                {
+                    "key": "relationship.holds_out_as_spouses",
+                    "label": "是否以夫妻身份生活",
+                    "type": "boolean",
+                    "state": "denied",
+                    "value": False,
+                    "materiality": "high",
+                    "question": "你们是否曾对外以夫妻身份生活？",
+                },
+                {
+                    "key": "relationship.second_marriage_registered",
+                    "label": "是否再次登记结婚",
+                    "type": "boolean",
+                    "state": "unknown",
+                    "materiality": "high",
+                    "question": "你们是否办理过结婚登记？",
+                }
+            ],
+        }
+    )
+
+    assert result["case_profile"]["missing_information"] == [
+        "你们是否办理过结婚登记？"
+    ]
+    assert result["response_contract"]["follow_up_questions"] == [
+        {
+            "factor_key": "relationship.second_marriage_registered",
+            "question": "你们是否办理过结婚登记？",
+        }
+    ]
+    held_out_factor = next(
+        factor
+        for factor in result["case_profile"]["factor_profile"]["factors"]
+        if factor["key"] == "relationship.holds_out_as_spouses"
+    )
+    assert held_out_factor["state"] == "denied"
+    assert held_out_factor["value"] is False

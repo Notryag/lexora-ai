@@ -64,6 +64,9 @@ class _AgentControlledCaseMemory:
     def updated(self) -> bool:
         return self.profile != self._initial
 
+    async def get_profile(self) -> CaseProfile:
+        return self.profile.model_copy(deep=True)
+
     async def update_profile(self, patch: CaseProfilePatch) -> CaseProfile:
         self.profile = patch.apply(self.profile)
         return self.profile.model_copy(deep=True)

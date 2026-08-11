@@ -10,7 +10,6 @@ from lexora_ai.domain import (
     CaseFactorProfile,
     CaseProfile,
     CaseProfilePatch,
-    FactorSchemaRegistry,
     LegalTurnFactorUpdate,
     LegalTurnIntent,
     LegalTurnPreparation,
@@ -18,7 +17,6 @@ from lexora_ai.domain import (
 )
 from lexora_ai.infrastructure.legal_turn_middleware import PREPARE_LEGAL_TURN_TOOL
 
-_FACTOR_REGISTRY = FactorSchemaRegistry()
 _SUFFICIENCY_GATE = SufficiencyGate()
 _AUTHORITY_QUERY_LIMIT = 4
 _AUTHORITY_SEARCH_CONCURRENCY = 2
@@ -132,17 +130,6 @@ async def _search_authority_queries(
     return await asyncio.gather(*(search(query) for query in queries))
 
 
-def _seed_factor_profile(
-    profile: CaseProfile,
-    preparation: LegalTurnPreparation,
-) -> CaseFactorProfile:
-    domains, definitions = _FACTOR_REGISTRY.definitions_for(
-        case_type=preparation.case_type or profile.case_type,
-        legal_issue=preparation.legal_issue,
-    )
-    return profile.factor_profile.seeded(domains=domains, definitions=definitions)
-
-
 def _apply_factor_updates(
     profile: CaseFactorProfile,
     updates: list[LegalTurnFactorUpdate],
@@ -170,7 +157,7 @@ def build_lexora_tools(
         authority_queries: list[str] | None = None,
         material_query: str | None = None,
         case_law_query: str | None = None,
-        decision_variables: list[str] | None = None,
+        decision_factor_keys: list[str] | None = None,
         factor_updates: list[LegalTurnFactorUpdate] | None = None,
     ) -> dict[str, object]:
         preparation = LegalTurnPreparation(
@@ -185,13 +172,23 @@ def build_lexora_tools(
             authority_queries=authority_queries or [],
             material_query=material_query,
             case_law_query=case_law_query,
-            decision_variables=decision_variables or [],
+            decision_factor_keys=decision_factor_keys or [],
             factor_updates=factor_updates or [],
         )
 
         profile: CaseProfile | None = None
         factor_profile_for_turn = CaseFactorProfile()
         if case_memory is not None and preparation.intent != LegalTurnIntent.social:
+            current_profile = await case_memory.get_profile()
+            factor_profile_for_turn = _apply_factor_updates(
+                current_profile.factor_profile,
+                preparation.factor_updates,
+            )
+            sufficiency = _SUFFICIENCY_GATE.evaluate(
+                intent=preparation.intent,
+                factor_profile=factor_profile_for_turn,
+                decision_factor_keys=preparation.decision_factor_keys,
+            )
             profile = await case_memory.update_profile(
                 CaseProfilePatch(
                     case_type=preparation.case_type,
@@ -200,23 +197,27 @@ def build_lexora_tools(
                     key_facts=preparation.key_facts,
                     disputed_issues=preparation.disputed_issues,
                     evidence_notes=preparation.evidence_notes,
-                    missing_information=preparation.decision_variables,
+                    missing_information=[
+                        question.question for question in sufficiency.follow_up_questions
+                    ],
+                    factor_profile=factor_profile_for_turn,
                 )
             )
-            factor_profile = _seed_factor_profile(profile, preparation)
-            factor_profile = _apply_factor_updates(
-                factor_profile,
-                preparation.factor_updates,
-            )
-            factor_profile_for_turn = factor_profile
-            if factor_profile != profile.factor_profile:
-                profile = await case_memory.update_profile(
-                    CaseProfilePatch(factor_profile=factor_profile)
-                )
         elif preparation.intent != LegalTurnIntent.social:
             factor_profile_for_turn = _apply_factor_updates(
-                _seed_factor_profile(CaseProfile(), preparation),
+                CaseFactorProfile(),
                 preparation.factor_updates,
+            )
+            sufficiency = _SUFFICIENCY_GATE.evaluate(
+                intent=preparation.intent,
+                factor_profile=factor_profile_for_turn,
+                decision_factor_keys=preparation.decision_factor_keys,
+            )
+        else:
+            sufficiency = _SUFFICIENCY_GATE.evaluate(
+                intent=preparation.intent,
+                factor_profile=factor_profile_for_turn,
+                decision_factor_keys=[],
             )
 
         legal_rankings = []
@@ -237,24 +238,12 @@ def build_lexora_tools(
         legal_chunks = _interleave_chunks(legal_rankings, limit=12)
         material_chunks = _dedupe_chunks(material_chunks, limit=8)
         case_law_chunks = _dedupe_chunks(case_law_chunks, limit=6)
-        sufficiency = _SUFFICIENCY_GATE.evaluate(
-            intent=preparation.intent,
-            factor_profile=(
-                profile.factor_profile if profile is not None else factor_profile_for_turn
-            ),
-            decision_variables=preparation.decision_variables,
-        )
         return {
             "turn_preparation": {
                 "intent": preparation.intent.value,
                 "legal_issue": preparation.legal_issue,
                 "user_stated_facts": preparation.key_facts,
-                "decision_variables": preparation.decision_variables,
-                "factor_domains": (
-                    profile.factor_profile.active_domains
-                    if profile is not None
-                    else factor_profile_for_turn.active_domains
-                ),
+                "decision_factor_keys": preparation.decision_factor_keys,
                 "factor_updates": [
                     factor_update.model_dump(mode="json")
                     for factor_update in preparation.factor_updates
@@ -283,6 +272,8 @@ def build_lexora_tools(
                 "maximum_follow_up_questions": len(sufficiency.follow_up_questions),
                 "exact_outcome_prediction_allowed": False,
                 "separate_known_facts_from_conditions": True,
+                "do_not_reask_known_facts": True,
+                "do_not_introduce_hypotheticals_contrary_to_known_facts": True,
                 "follow_up_questions": [
                     question.model_dump(mode="json") for question in sufficiency.follow_up_questions
                 ],
@@ -298,9 +289,14 @@ def build_lexora_tools(
                 "social, case_update, or legal_question. Copy only facts explicitly stated by the "
                 "user; never place legal conclusions in key_facts. For a legal question, identify "
                 "one legal_issue, provide up to three focused authority_queries covering the "
-                "governing rule and outcome-changing factors, and at most two decision_variables. "
-                "When factor_schema is present in case_data, emit factor_updates using only those "
-                "factor keys and only for user-stated or user-denied facts from the current turn. "
+                "governing rule and outcome-changing factual dimensions. Autonomously extract a "
+                "small structured factor set: create stable semantic keys with neutral labels, "
+                "types, materiality, and canonical questions; reuse the exact key already present "
+                "in case_profile whenever the dimension exists. A factor is a case fact, never a "
+                "legal conclusion, prediction, statute, or generic warning. Use asserted or denied "
+                "only for facts explicit in the current user turn; use unknown only for facts that "
+                "would materially change the current answer. Set decision_factor_keys to at most "
+                "two unknown factor keys. Never select an asserted or denied factor for follow-up. "
                 "The tool stages case memory and performs the required retrieval as one structured "
                 "step. Use material_query or case_law_query only when those sources would materially "
                 "help. Do not answer the user until this tool returns."

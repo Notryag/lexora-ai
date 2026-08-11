@@ -71,8 +71,8 @@ def test_conversation_prompt_delegates_retrieval_choice_to_agent() -> None:
     assert "必须展示条件分支" in LEXORA_SYSTEM_PROMPT
     assert payload["capabilities"] == {"retrieval": True, "case_memory": True}
     assert payload["retrieved_material_chunks"] == []
-    assert "factor_schema" in payload
-    assert payload["factor_schema"]["definitions"]
+    assert "factor_schema" not in payload
+    assert "动态形成" in LEXORA_SYSTEM_PROMPT
 
 
 def test_conversation_prompt_delegates_preparation_to_runtime_tool() -> None:

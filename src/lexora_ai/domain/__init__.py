@@ -21,7 +21,6 @@ from lexora_ai.domain.factors import (
     CaseFactorProfile,
     FactorDefinition,
     FactorMateriality,
-    FactorSchemaRegistry,
     FactorState,
     FactorType,
 )
@@ -84,7 +83,6 @@ __all__ = [
     "FollowUpQuestion",
     "FactorDefinition",
     "FactorMateriality",
-    "FactorSchemaRegistry",
     "FactorState",
     "FactorType",
     "LegalCase",

@@ -80,6 +80,8 @@ class ConversationRetrievalPort(Protocol):
 
 
 class ConversationCaseMemoryPort(Protocol):
+    async def get_profile(self) -> CaseProfile: ...
+
     async def update_profile(self, patch: CaseProfilePatch) -> CaseProfile: ...
 
 

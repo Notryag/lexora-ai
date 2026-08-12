@@ -180,6 +180,14 @@ application scan. These are correctness constraints because violating them can e
 merely retrieval optimizations. See
 [the 2026-08-11 memory-thrashing incident](incident-2026-08-11-memory-thrashing.md).
 
+Research benchmark retrieval is a separate offline path. A future approved benchmark may stream a
+hash-verified corpus into a content-addressed SQLite FTS5/BM25 index under ignored research storage.
+That index has hard document, text, total-character, query and Top-K limits and may never be opened by
+an API request path. Execution requires a complete query/qrels/candidate integrity plan, an approved
+`research_evaluation` scope and an approved license review. It does not publish research candidates as
+legal authorities and remains a Lexora adapter, not `rag-core`, until another real application proves
+the same storage lifecycle is shared.
+
 The expected evolution is:
 
 ```text

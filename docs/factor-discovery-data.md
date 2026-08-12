@@ -301,7 +301,8 @@ The research query sets and their relevance labels now share a second non-billab
 uv run lexora-research-benchmark \
   --dataset cail2022-lcr=storage/factor-discovery/cail2022-lcr/repository-master/raw/query_stage2_valid_onlystage2_40.json=storage/factor-discovery/cail2022-lcr/repository-master/raw/label_onlystage2_40.json \
   --dataset lecardv2=storage/factor-discovery/lecardv2/repository-main/raw/query_allcontext.json=storage/factor-discovery/lecardv2/repository-main/raw/relevence.trec \
-  --dataset stard=storage/factor-discovery/stard/repository-main/raw/queries.json=storage/factor-discovery/stard/repository-main/raw/queries.json
+  --dataset stard=storage/factor-discovery/stard/repository-main/raw/queries.json=storage/factor-discovery/stard/repository-main/raw/queries.json \
+  --candidate stard=storage/factor-discovery/stard/repository-main/raw/corpus.jsonl
 ```
 
 The adapter preserves only namespaced query IDs, candidate IDs and relevance grades. CAIL2022 joins
@@ -319,12 +320,26 @@ for normalization coverage and is not silently treated as a labeled benchmark.
 The corrected joint plan contains 2,383 judged queries and 27,881 relevance judgments over 23,900
 namespaced candidate IDs: 40 CAIL2022 queries with 1,200 judgments, 800 LeCaRDv2 queries with 23,964
 judgments, and 1,543 STARD queries with 2,717 judgments. It has zero unjudged queries, zero orphan
-judgment queries, zero rejected records, zero model calls, and plan identity
-`sha256:8d617db9e0bb837b465b13788e995cce274a13ab3c82fdb9703d0089d2ab19df`.
+judgment queries, zero rejected records and zero model calls. The hash-verified STARD corpus contains
+55,348 candidate statutes, and all 1,445 candidate IDs referenced by its qrels are present. With that
+inventory included, the current plan identity is
+`sha256:766f5b966bc1321c81726b637439d2e5c0d4f2879132d72e9122f991d28b8163`.
 The CLI exits nonzero if query loading is truncated, any query or judgment is rejected, or either side
 of the query-to-judgment join is incomplete.
 
-This establishes the benchmark definition only. Candidate text has deliberately not been loaded, so
-Recall@K, MRR and ranking comparisons cannot be computed yet. CAIL2022 candidate archives, the
-LeCaRDv2 candidate collection and the STARD statute corpus require separate bounded acquisition and
-license review; none of them becomes a user-visible authority through this research path.
+This still establishes only the benchmark definition and candidate coverage. All three registrations
+permit `research_planning`, not `research_evaluation`, and CAIL2022 and LeCaRDv2 candidate corpora are
+not verified. The report therefore has `integrity_ready=true` but `evaluation_ready=false`.
+
+An explicit `--execute-stard-bm25` mode is implemented for later approval. It refuses to create an
+index unless integrity, candidate coverage and the `research_evaluation` scope are all satisfied. The
+index streams candidates into a disk-backed SQLite FTS5/BM25 index, uses deterministic CJK 2/3-grams,
+is content-addressed by the corpus hash, and enforces limits on document count, individual text size,
+total indexed characters and Top-K. It reports HitRate@K, strict macro Recall@K and MRR@K separately.
+It is an offline Lexora research adapter, not an online request-path retriever and not yet a shared
+`rag-core` capability. Running the mode against the current STARD registration fails before index
+creation, so no real Recall/MRR values have been produced and no candidate-derived index exists.
+
+CAIL2022 candidate archives and the external LeCaRDv2 candidate collection still require separate
+bounded acquisition and license review. None of these research assets becomes a user-visible authority
+through this path.

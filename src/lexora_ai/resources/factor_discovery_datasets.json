@@ -119,6 +119,15 @@
         "allowed_hostname": "raw.githubusercontent.com",
         "size_bytes": 1818895,
         "sha256": "e64dcdbda5d2b734a7242253620dcf5e8325a3d726f0ca0a86e9b3664b8ba644"
+      },
+      {
+        "name": "statute-candidate-corpus",
+        "purposes": ["benchmark_candidate_corpus"],
+        "path": "data/corpus.jsonl",
+        "source_url": "https://raw.githubusercontent.com/oneal2000/STARD/bae10e1f358685446c3af4b15e7b94724f83bc9e/data/corpus.jsonl",
+        "allowed_hostname": "raw.githubusercontent.com",
+        "size_bytes": 24120549,
+        "sha256": "15c77a1333d947ec88cf4cb4c99d70dafd946ec91d35f2bbc77824817c7f7fa4"
       }
     ]
   },

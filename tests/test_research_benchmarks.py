@@ -11,6 +11,7 @@ from lexora_ai.application.research_benchmark_planning import (
 )
 from lexora_ai.infrastructure.research_benchmark_adapters import (
     load_relevance_judgments,
+    load_stard_candidate_inventory,
 )
 from lexora_ai.infrastructure.research_dataset_adapters import load_research_dataset
 from lexora_ai.infrastructure.research_dataset_registry import registered_research_datasets
@@ -113,6 +114,7 @@ def test_stard_queries_embed_binary_relevance_labels(tmp_path: Path) -> None:
     assert "谁可以成为个体工商户" not in rendered
     assert not plan.candidate_text_loaded
     assert plan.model_calls == 0
+    assert not plan.evaluation_ready
 
 
 def test_plan_reports_missing_and_orphan_query_labels(tmp_path: Path) -> None:
@@ -164,6 +166,98 @@ def test_registry_separates_cail_normalization_and_benchmark_queries() -> None:
         registration.file_for("benchmark_relevance_labels").name
         == "stage2-benchmark-relevance-labels"
     )
+
+
+def test_stard_candidate_inventory_validates_qrel_coverage(tmp_path: Path) -> None:
+    query_source = _json(
+        tmp_path / "queries.json",
+        [
+            {
+                "query_id": 0,
+                "问题": "合同是否有效？",
+                "match_id": [7, 8],
+                "match_name": ["法律七", "法律八"],
+            }
+        ],
+    )
+    corpus_source = tmp_path / "corpus.jsonl"
+    corpus_source.write_text(
+        json.dumps({"id": 7, "name": "法律七", "content": "法律内容"}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    queries = load_research_dataset(
+        query_source,
+        dataset_name="stard",
+        dataset_version="fixture",
+        expected_source_sha256=_hash(query_source),
+    )
+    relevance = load_relevance_judgments(
+        query_source,
+        dataset_name="stard",
+        expected_source_sha256=_hash(query_source),
+    )
+    inventory = load_stard_candidate_inventory(
+        corpus_source,
+        expected_source_sha256=_hash(corpus_source),
+    )
+
+    plan = build_research_benchmark_plan(
+        [(queries, relevance)],
+        candidate_inventories={"stard": inventory},
+    )
+
+    assert plan.candidate_corpus_scanned
+    assert not plan.integrity_ready
+    assert plan.datasets[0]["candidate_records"] == 1
+    assert plan.datasets[0]["missing_judgment_candidates"] == 1
+    assert plan.datasets[0]["candidate_source_sha256"] == _hash(corpus_source)
+    assert "stard: judgments reference missing candidates" in plan.integrity_errors
+
+
+def test_plan_requires_candidate_coverage_scope_and_license_for_evaluation(tmp_path: Path) -> None:
+    query_source = _json(
+        tmp_path / "queries.json",
+        [
+            {
+                "query_id": 0,
+                "问题": "合同是否有效？",
+                "match_id": [7],
+                "match_name": ["法律七"],
+            }
+        ],
+    )
+    corpus_source = tmp_path / "corpus.jsonl"
+    corpus_source.write_text(
+        json.dumps({"id": 7, "name": "法律七", "content": "法律内容"}, ensure_ascii=False)
+        + "\n",
+        encoding="utf-8",
+    )
+    queries = load_research_dataset(
+        query_source,
+        dataset_name="stard",
+        dataset_version="fixture",
+        expected_source_sha256=_hash(query_source),
+        license_review_status="approved",
+        permitted_scopes=("research_planning", "research_evaluation"),
+    )
+    relevance = load_relevance_judgments(
+        query_source,
+        dataset_name="stard",
+        expected_source_sha256=_hash(query_source),
+    )
+    inventory = load_stard_candidate_inventory(
+        corpus_source,
+        expected_source_sha256=_hash(corpus_source),
+    )
+
+    plan = build_research_benchmark_plan(
+        [(queries, relevance)],
+        candidate_inventories={"stard": inventory},
+    )
+
+    assert plan.integrity_ready
+    assert plan.evaluation_ready
+    assert plan.readiness_errors == ()
 
 
 def _json(path: Path, payload: object) -> Path:

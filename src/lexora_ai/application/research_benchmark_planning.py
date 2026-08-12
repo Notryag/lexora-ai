@@ -6,6 +6,7 @@ from hashlib import sha256
 
 from lexora_ai.domain.research_benchmarks import (
     ResearchBenchmarkPlan,
+    ResearchCandidateInventory,
     ResearchRelevanceLoadResult,
 )
 from lexora_ai.domain.research_datasets import ResearchDatasetLoadResult
@@ -15,7 +16,10 @@ RESEARCH_BENCHMARK_VERSION = "research-benchmark-v1"
 
 def build_research_benchmark_plan(
     sources: list[tuple[ResearchDatasetLoadResult, ResearchRelevanceLoadResult]],
+    *,
+    candidate_inventories: dict[str, ResearchCandidateInventory] | None = None,
 ) -> ResearchBenchmarkPlan:
+    inventories = candidate_inventories or {}
     summaries: list[dict[str, object]] = []
     total_queries = 0
     judged_queries = 0
@@ -24,6 +28,8 @@ def build_research_benchmark_plan(
     total_judgments = 0
     candidates: set[tuple[str, str]] = set()
     integrity_errors: list[str] = []
+    readiness_errors: list[str] = []
+    candidate_corpus_scanned = False
 
     for queries, relevance in sources:
         if queries.dataset_name != relevance.dataset_name:
@@ -35,6 +41,13 @@ def build_research_benchmark_plan(
         orphaned = judged_ids - query_ids
         grade_counts = Counter(judgment.grade for judgment in relevance.judgments)
         dataset_candidates = {judgment.candidate_source_id for judgment in relevance.judgments}
+        inventory = inventories.get(queries.dataset_name)
+        missing_candidates: set[str] = set()
+        if inventory is not None:
+            if inventory.dataset_name != queries.dataset_name:
+                raise ValueError("candidate inventory dataset does not match")
+            candidate_corpus_scanned = True
+            missing_candidates = dataset_candidates - inventory.candidate_ids
         total_queries += len(query_ids)
         judged_queries += len(matched)
         queries_without_judgments += len(missing)
@@ -51,6 +64,23 @@ def build_research_benchmark_plan(
             integrity_errors.append(f"{queries.dataset_name}: queries are missing judgments")
         if orphaned:
             integrity_errors.append(f"{queries.dataset_name}: judgments reference unknown queries")
+        if inventory is None:
+            readiness_errors.append(f"{queries.dataset_name}: candidate corpus is not verified")
+        else:
+            if inventory.records_rejected:
+                integrity_errors.append(f"{queries.dataset_name}: candidate records were rejected")
+            if missing_candidates:
+                integrity_errors.append(
+                    f"{queries.dataset_name}: judgments reference missing candidates"
+                )
+        if "research_evaluation" not in queries.permitted_scopes:
+            readiness_errors.append(
+                f"{queries.dataset_name}: research evaluation scope is not approved"
+            )
+        if queries.license_review_status != "approved":
+            readiness_errors.append(
+                f"{queries.dataset_name}: license review is not approved for evaluation"
+            )
         summaries.append(
             {
                 "dataset_name": queries.dataset_name,
@@ -72,6 +102,13 @@ def build_research_benchmark_plan(
                 "judgments_rejected": relevance.records_rejected,
                 "judgments_duplicated": relevance.records_duplicated,
                 "distinct_candidates": len(dataset_candidates),
+                "candidate_corpus_verified": inventory is not None,
+                "candidate_source_sha256": inventory.source_sha256 if inventory else None,
+                "candidate_source_hash_verified": (
+                    inventory.source_hash_verified if inventory else False
+                ),
+                "candidate_records": len(inventory.candidate_ids) if inventory else 0,
+                "missing_judgment_candidates": len(missing_candidates),
                 "grade_distribution": {
                     str(grade): count for grade, count in sorted(grade_counts.items())
                 },
@@ -90,6 +127,9 @@ def build_research_benchmark_plan(
         distinct_candidates=len(candidates),
         integrity_ready=not integrity_errors,
         integrity_errors=tuple(integrity_errors),
+        evaluation_ready=not integrity_errors and not readiness_errors,
+        readiness_errors=tuple(readiness_errors),
+        candidate_corpus_scanned=candidate_corpus_scanned,
     )
 
 

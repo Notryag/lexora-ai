@@ -35,11 +35,21 @@
     "files": [
       {
         "name": "query-all-context",
+        "purposes": ["queries", "benchmark_queries"],
         "path": "query/query_allcontext.json",
         "source_url": "https://raw.githubusercontent.com/THUIR/LeCaRDv2/3326485a6c41f8aeda15502fea24e658f8fab746/query/query_allcontext.json",
         "allowed_hostname": "raw.githubusercontent.com",
         "size_bytes": 17066722,
         "sha256": "38c0c7af6d0dd06d663fc543eca0eb2b289ea121fb571e1634edd368681f97cc"
+      },
+      {
+        "name": "relevance-labels",
+        "purposes": ["benchmark_relevance_labels"],
+        "path": "label/relevence.trec",
+        "source_url": "https://raw.githubusercontent.com/THUIR/LeCaRDv2/3326485a6c41f8aeda15502fea24e658f8fab746/label/relevence.trec",
+        "allowed_hostname": "raw.githubusercontent.com",
+        "size_bytes": 373998,
+        "sha256": "b6b98c268b587163daf52e1bbcc1d7a3f45ce3c9388102ba3662346b36a225ce"
       }
     ]
   },
@@ -55,11 +65,39 @@
     "files": [
       {
         "name": "stage2-queries",
+        "purposes": ["queries"],
         "path": "CAIL2022/stage2/query_stage2.json",
         "source_url": "https://raw.githubusercontent.com/thunlp/LEAD/c15825aff9c975ee6e996dce91ded64a1a9d6bcf/CAIL2022/stage2/query_stage2.json",
         "allowed_hostname": "raw.githubusercontent.com",
         "size_bytes": 351261,
         "sha256": "8565296c1798eb2f82c2df61c55ea5380f04a37dbf9a1f4f79803f0313ec8bae"
+      },
+      {
+        "name": "stage2-relevance-labels",
+        "purposes": ["diagnostic_relevance_labels"],
+        "path": "CAIL2022/stage2/label.json",
+        "source_url": "https://raw.githubusercontent.com/thunlp/LEAD/c15825aff9c975ee6e996dce91ded64a1a9d6bcf/CAIL2022/stage2/label.json",
+        "allowed_hostname": "raw.githubusercontent.com",
+        "size_bytes": 80322,
+        "sha256": "bcc0428802b58b2d42264d98393302c1da684a4fdd1fdd776e29f16a581e6d30"
+      },
+      {
+        "name": "stage2-benchmark-queries",
+        "purposes": ["benchmark_queries"],
+        "path": "CAIL2022/stage2/query_stage2_valid_onlystage2_40.json",
+        "source_url": "https://raw.githubusercontent.com/thunlp/LEAD/c15825aff9c975ee6e996dce91ded64a1a9d6bcf/CAIL2022/stage2/query_stage2_valid_onlystage2_40.json",
+        "allowed_hostname": "raw.githubusercontent.com",
+        "size_bytes": 54136,
+        "sha256": "c3b88b1059a60fdd4b6c13cc7d4335eaa17119fda567293f15f3da0e36b0c448"
+      },
+      {
+        "name": "stage2-benchmark-relevance-labels",
+        "purposes": ["benchmark_relevance_labels"],
+        "path": "CAIL2022/stage2/label_onlystage2_40.json",
+        "source_url": "https://raw.githubusercontent.com/thunlp/LEAD/c15825aff9c975ee6e996dce91ded64a1a9d6bcf/CAIL2022/stage2/label_onlystage2_40.json",
+        "allowed_hostname": "raw.githubusercontent.com",
+        "size_bytes": 14717,
+        "sha256": "3ec2a9f97c8e9ac1505dea771e3d8959f91e7bb7a9a75e3393f2225e523e78ee"
       }
     ]
   },
@@ -75,6 +113,7 @@
     "files": [
       {
         "name": "consultation-queries",
+        "purposes": ["queries", "benchmark_queries", "benchmark_relevance_labels"],
         "path": "data/queries.json",
         "source_url": "https://raw.githubusercontent.com/oneal2000/STARD/bae10e1f358685446c3af4b15e7b94724f83bc9e/data/queries.json",
         "allowed_hostname": "raw.githubusercontent.com",

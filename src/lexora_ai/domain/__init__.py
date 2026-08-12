@@ -49,6 +49,11 @@ from lexora_ai.domain.legal_turns import (
     LegalTurnIntent,
     LegalTurnPreparation,
 )
+from lexora_ai.domain.research_benchmarks import (
+    ResearchBenchmarkPlan,
+    ResearchRelevanceJudgment,
+    ResearchRelevanceLoadResult,
+)
 from lexora_ai.domain.research_datasets import (
     NormalizedResearchRecord,
     ResearchDatasetLoadResult,
@@ -126,10 +131,13 @@ __all__ = [
     "MaterialKind",
     "MaterialUploadMetadata",
     "NormalizedResearchRecord",
+    "ResearchBenchmarkPlan",
     "ResearchDatasetLoadResult",
     "ResearchDuplicateGroup",
     "ResearchNormalizationPlan",
     "ResearchRecordKind",
+    "ResearchRelevanceJudgment",
+    "ResearchRelevanceLoadResult",
     "StoredCaseMaterial",
     "StoredMaterialChunk",
     "SufficiencyDecision",

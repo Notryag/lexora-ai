@@ -292,3 +292,39 @@ source file at 32 MiB and 5,000 records, writes no normalized corpus, and makes 
 All three local source hashes matched their registry entries. The current reproducible report uses
 `research-normalization-v1` and plan identity
 `sha256:7d3ced01ca7c6b831a61f68fef64a7cfcabfe55ef7786c5671e08db1e0c052a0`.
+
+## Retrieval Benchmark Planning
+
+The research query sets and their relevance labels now share a second non-billable dry run:
+
+```bash
+uv run lexora-research-benchmark \
+  --dataset cail2022-lcr=storage/factor-discovery/cail2022-lcr/repository-master/raw/query_stage2_valid_onlystage2_40.json=storage/factor-discovery/cail2022-lcr/repository-master/raw/label_onlystage2_40.json \
+  --dataset lecardv2=storage/factor-discovery/lecardv2/repository-main/raw/query_allcontext.json=storage/factor-discovery/lecardv2/repository-main/raw/relevence.trec \
+  --dataset stard=storage/factor-discovery/stard/repository-main/raw/queries.json=storage/factor-discovery/stard/repository-main/raw/queries.json
+```
+
+The adapter preserves only namespaced query IDs, candidate IDs and relevance grades. CAIL2022 joins
+labels to the query `ridx`, not its document path. LeCaRDv2 reads the published TREC qrels and retains
+grades 0 through 3. STARD converts each embedded `match_id` into a binary relevance judgment. Source
+files are hash-verified against the registry before parsing; the report contains no query or candidate
+text.
+
+An initial integrity run found that the 300-record CAIL2022 `query_stage2.json` and the full
+`label.json` are not one closed evaluation split: only 40 query IDs overlap, with 260 unjudged queries
+and 90 label-only queries. The benchmark therefore uses the repository's explicitly paired
+`query_stage2_valid_onlystage2_40.json` and `label_onlystage2_40.json`. The 300-query file remains valid
+for normalization coverage and is not silently treated as a labeled benchmark.
+
+The corrected joint plan contains 2,383 judged queries and 27,881 relevance judgments over 23,900
+namespaced candidate IDs: 40 CAIL2022 queries with 1,200 judgments, 800 LeCaRDv2 queries with 23,964
+judgments, and 1,543 STARD queries with 2,717 judgments. It has zero unjudged queries, zero orphan
+judgment queries, zero rejected records, zero model calls, and plan identity
+`sha256:8d617db9e0bb837b465b13788e995cce274a13ab3c82fdb9703d0089d2ab19df`.
+The CLI exits nonzero if query loading is truncated, any query or judgment is rejected, or either side
+of the query-to-judgment join is incomplete.
+
+This establishes the benchmark definition only. Candidate text has deliberately not been loaded, so
+Recall@K, MRR and ranking comparisons cannot be computed yet. CAIL2022 candidate archives, the
+LeCaRDv2 candidate collection and the STARD statute corpus require separate bounded acquisition and
+license review; none of them becomes a user-visible authority through this research path.

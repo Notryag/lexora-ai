@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import argparse
 import json
-from importlib.resources import files
 from pathlib import Path
 
 from lexora_ai.application.research_dataset_normalization import (
     build_research_normalization_plan,
 )
 from lexora_ai.infrastructure.research_dataset_adapters import load_research_dataset
+from lexora_ai.infrastructure.research_dataset_registry import registered_research_datasets
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -32,7 +32,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def run() -> None:
     args = _parser().parse_args()
-    registrations = _registered_sources()
+    registrations = registered_research_datasets()
     loaded = []
     seen_names: set[str] = set()
     for raw_source in args.source:
@@ -42,18 +42,19 @@ def run() -> None:
         if name not in registrations:
             raise ValueError(f"dataset is not registered: {name}")
         registration = registrations[name]
+        query_source = registration.file_for("queries")
         seen_names.add(name)
         loaded.append(
             load_research_dataset(
                 path,
                 dataset_name=name,
-                dataset_version=str(registration["version"]),
+                dataset_version=registration.version,
                 max_records=args.max_records_per_source,
                 max_text_chars=args.max_text_chars,
                 max_file_bytes=args.max_file_bytes,
-                expected_source_sha256=str(registration["sha256"]),
-                license_review_status=str(registration["license_review_status"]),
-                permitted_scopes=tuple(registration["permitted_scopes"]),
+                expected_source_sha256=query_source.sha256,
+                license_review_status=registration.license_review_status,
+                permitted_scopes=registration.permitted_scopes,
             )
         )
     plan = build_research_normalization_plan(
@@ -65,32 +66,6 @@ def run() -> None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(f"{rendered}\n", encoding="utf-8")
     print(rendered)
-
-
-def _registered_sources() -> dict[str, dict[str, object]]:
-    resource = files("lexora_ai.resources").joinpath("factor_discovery_datasets.json")
-    datasets = json.loads(resource.read_text(encoding="utf-8"))
-    registrations: dict[str, dict[str, object]] = {}
-    for dataset in datasets:
-        name = dataset.get("name")
-        if name not in {"cail2022-lcr", "lecardv2", "stard"}:
-            continue
-        source_files = dataset.get("files")
-        if not isinstance(source_files, list) or len(source_files) != 1:
-            raise ValueError(f"dataset must register exactly one normalization source: {name}")
-        source_file = source_files[0]
-        if not isinstance(source_file, dict) or not isinstance(source_file.get("sha256"), str):
-            raise ValueError(f"dataset normalization source has no SHA-256: {name}")
-        scopes = dataset.get("permitted_scopes")
-        if not isinstance(scopes, list) or not all(isinstance(scope, str) for scope in scopes):
-            raise ValueError(f"dataset permitted scopes are invalid: {name}")
-        registrations[str(name)] = {
-            "version": dataset["version"],
-            "sha256": source_file["sha256"],
-            "license_review_status": dataset.get("license_review_status", "unrecorded"),
-            "permitted_scopes": scopes,
-        }
-    return registrations
 
 
 def _parse_source(value: str) -> tuple[str, Path]:

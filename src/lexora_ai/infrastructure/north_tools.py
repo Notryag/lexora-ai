@@ -28,6 +28,10 @@ from lexora_ai.domain import (
     LegalTurnPreparation,
     SufficiencyGate,
 )
+from lexora_ai.domain.legal_calculations import (
+    EmploymentTerminationCompensationInput,
+    calculate_employment_termination_compensation,
+)
 from lexora_ai.infrastructure.legal_turn_middleware import PREPARE_LEGAL_TURN_TOOL
 
 _SUFFICIENCY_GATE = SufficiencyGate()
@@ -234,19 +238,49 @@ def build_lexora_tools(
         follow_up_candidates: list[LegalTurnFollowUpCandidate] | None = None,
         factor_updates: list[LegalTurnFactorUpdate] | None = None,
     ) -> dict[str, object]:
+        current_profile = (
+            await case_memory.get_profile()
+            if case_memory is not None
+            else None
+        )
+        resumed_targets = (
+            current_profile.pending_answer_targets
+            if current_profile is not None
+            else []
+        )
+        resume_previous_analysis = (
+            intent == LegalTurnIntent.case_update
+            and bool(resumed_targets)
+        )
+        effective_intent = (
+            LegalTurnIntent.legal_question
+            if resume_previous_analysis
+            else intent
+        )
+        effective_answer_targets = answer_targets or (
+            resumed_targets if resume_previous_analysis else []
+        )
+        effective_legal_issue = legal_issue or (
+            resumed_targets[0].question if resume_previous_analysis else None
+        )
+        effective_authority_queries = authority_queries or (
+            [target.question for target in resumed_targets]
+            if resume_previous_analysis
+            else []
+        )
         preparation = LegalTurnPreparation(
-            intent=intent,
-            legal_issue=legal_issue,
+            intent=effective_intent,
+            legal_issue=effective_legal_issue,
             case_type=case_type,
             parties=parties or [],
             claims=claims or [],
             key_facts=key_facts or [],
             disputed_issues=disputed_issues or [],
             evidence_notes=evidence_notes or [],
-            authority_queries=authority_queries or [],
+            authority_queries=effective_authority_queries,
             material_query=material_query,
             case_law_query=case_law_query,
-            answer_targets=answer_targets or [],
+            answer_targets=effective_answer_targets,
             follow_up_candidates=follow_up_candidates or [],
             factor_updates=factor_updates or [],
         )
@@ -256,7 +290,6 @@ def build_lexora_tools(
         accepted_factor_updates = list(preparation.factor_updates)
         factor_profile_for_turn = CaseFactorProfile()
         if case_memory is not None and preparation.intent != LegalTurnIntent.social:
-            current_profile = await case_memory.get_profile()
             if factor_update_reviewer is not None:
                 factor_grounding_reviews = await factor_update_reviewer.review_factor_updates(
                     user_message=user_message,
@@ -330,6 +363,7 @@ def build_lexora_tools(
                     missing_information=[
                         question.question for question in sufficiency.follow_up_questions
                     ],
+                    pending_answer_targets=preparation.answer_targets,
                     factor_profile=_profile_for_commit(
                         factor_profile_for_turn,
                         admitted_factor_keys,
@@ -410,7 +444,9 @@ def build_lexora_tools(
             name=PREPARE_LEGAL_TURN_TOOL,
             description=(
                 "Prepare every Lexora conversation turn before answering. Classify the turn as "
-                "social, case_update, or legal_question. Copy only facts explicitly stated by the "
+                "social, case_update, or legal_question. A case_update with an existing pending "
+                "analysis target is a continuation: the application promotes it to a legal turn, "
+                "reuses those targets, and retrieves authorities before answering. Copy only facts explicitly stated by the "
                 "user; never place legal conclusions in key_facts. For a legal question, identify "
                 "one legal_issue, provide up to three focused authority_queries covering the "
                 "governing rule and outcome-changing factual dimensions. Autonomously extract a "
@@ -418,8 +454,12 @@ def build_lexora_tools(
                 "types, materiality, and canonical questions; reuse the exact key already present "
                 "in case_profile whenever the dimension exists. A factor is a case fact, never a "
                 "legal conclusion, prediction, statute, or generic warning. Use asserted or denied "
-                "only for facts explicit in the current user turn. Preserve every qualifier and "
-                "the exact scope of a negation; a qualified denial cannot become a broader denial. "
+                "only for facts explicit in the current user turn. Each factor must be atomic: its "
+                "key, label, value, and question cannot combine a broader fact that the user did not "
+                "state. Preserve every qualifier and the exact scope of a negation; a qualified "
+                "denial cannot become a broader denial. Preserve approximate numeric wording in "
+                "the value instead of converting it to false precision. Put factual supplements in "
+                "key_facts, never claims. "
                 "Use unknown only for facts that "
                 "would materially change the current answer. Restate every question the user "
                 "actually asked in answer_targets and choose direct or conditional response mode. "
@@ -434,6 +474,37 @@ def build_lexora_tools(
                 "help. Do not answer the user until this tool returns."
             ),
             args_schema=LegalTurnPreparation,
+        )
+    )
+
+    def calculate_termination_compensation(
+        completed_years: int,
+        additional_months: int,
+        monthly_wage,
+        local_average_monthly_wage=None,
+    ) -> dict[str, object]:
+        return calculate_employment_termination_compensation(
+            EmploymentTerminationCompensationInput(
+                completed_years=completed_years,
+                additional_months=additional_months,
+                monthly_wage=monthly_wage,
+                local_average_monthly_wage=local_average_monthly_wage,
+            )
+        )
+
+    tools.append(
+        StructuredTool.from_function(
+            func=calculate_termination_compensation,
+            name="calculate_employment_termination_compensation",
+            description=(
+                "Calculate the statutory mainland China employment-termination N and 2N amounts "
+                "from service duration and average monthly wage. Use this after prepare_legal_turn "
+                "whenever the user asks for an economic-compensation or unlawful-termination "
+                "damages amount. The tool performs arithmetic only: determine entitlement from "
+                "retrieved legal authority, reproduce the returned figures exactly, and preserve "
+                "its cap caveat when local average wage is unavailable."
+            ),
+            args_schema=EmploymentTerminationCompensationInput,
         )
     )
 

@@ -50,7 +50,10 @@ from lexora_ai.domain import (
     MaterialKind,
     StoredCaseMaterial,
 )
-from lexora_ai.infrastructure import ModelNotConfiguredError
+from lexora_ai.infrastructure import (
+    ModelNotConfiguredError,
+    ModelTemporarilyUnavailableError,
+)
 
 from .dependencies import (
     get_analyze_case_service,
@@ -171,6 +174,10 @@ async def create_analysis(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
+    except ModelTemporarilyUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
 
 
 @router.post(
@@ -188,6 +195,10 @@ async def create_conversation_turn(
     try:
         return await service.execute(request)
     except ModelNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    except ModelTemporarilyUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
@@ -367,6 +378,10 @@ async def create_case_conversation_turn(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
+    except ModelTemporarilyUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
     except ActiveThreadRunError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except RunCancelledError as exc:
@@ -401,12 +416,28 @@ async def stream_case_conversation_turn(
                 )
                 await queue.put(("complete", result))
             except RunCancelledError:
-                await queue.put(("error", "分析已取消。"))
+                await queue.put(
+                    ("error", {"code": "run_cancelled", "message": "分析已取消。"})
+                )
+            except ModelTemporarilyUnavailableError as exc:
+                await queue.put(
+                    (
+                        "error",
+                        {"code": "provider_unavailable", "message": str(exc)},
+                    )
+                )
             except (CaseNotFoundError, ModelNotConfiguredError, ActiveThreadRunError) as exc:
-                await queue.put(("error", str(exc)))
+                await queue.put(
+                    ("error", {"code": "request_rejected", "message": str(exc)})
+                )
             except Exception:
                 logger.exception("Case conversation stream failed", extra={"case_id": str(case_id)})
-                await queue.put(("error", "分析失败，请稍后重试。"))
+                await queue.put(
+                    (
+                        "error",
+                        {"code": "internal_error", "message": "分析失败，请稍后重试。"},
+                    )
+                )
             finally:
                 await queue.put(("end", None))
 
@@ -424,7 +455,7 @@ async def stream_case_conversation_turn(
                 elif event_type == "delta":
                     data = {"type": "delta", "delta": payload}
                 else:
-                    data = {"type": "error", "message": payload}
+                    data = {"type": "error", **payload}
                 yield json.dumps(data, ensure_ascii=False, separators=(",", ":")) + "\n"
         finally:
             if not task.done():

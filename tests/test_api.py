@@ -22,7 +22,10 @@ from lexora_ai.domain import (
     CaseConversationTurnResult,
     ConversationTurnRequest,
 )
-from lexora_ai.infrastructure import ModelNotConfiguredError
+from lexora_ai.infrastructure import (
+    ModelNotConfiguredError,
+    ModelTemporarilyUnavailableError,
+)
 
 
 class FakeGateway:
@@ -74,6 +77,12 @@ class FakePersistentConversationService:
         )
 
 
+class UnavailablePersistentConversationService:
+    async def execute(self, case_id, request, *, on_text_delta=None):
+        del case_id, request, on_text_delta
+        raise ModelTemporarilyUnavailableError("模型服务暂时不可用，请稍后重试。")
+
+
 def build_client() -> TestClient:
     app = create_app()
     gateway = FakeGateway()
@@ -112,6 +121,28 @@ def test_case_conversation_stream_returns_deltas_and_completion() -> None:
     assert events[2]["result"]["assistant_message"] == "你好，已收到：hi"
     assert events[2]["result"]["profile_updated"] is False
     assert events[2]["result"]["case_profile"]["key_facts"] == []
+
+
+def test_case_conversation_stream_classifies_provider_unavailability() -> None:
+    app = create_app()
+    app.dependency_overrides[get_persistent_conversation_service] = (
+        UnavailablePersistentConversationService
+    )
+    case_id = "018f6f7c-3500-7c4a-83e7-64dd8aa83291"
+
+    response = TestClient(app).post(
+        f"/api/v1/cases/{case_id}/messages/stream",
+        json={"message": "hi"},
+    )
+
+    assert response.status_code == 200
+    assert [json.loads(line) for line in response.text.splitlines()] == [
+        {
+            "type": "error",
+            "code": "provider_unavailable",
+            "message": "模型服务暂时不可用，请稍后重试。",
+        }
+    ]
 
 
 def test_create_analysis() -> None:

@@ -9,6 +9,7 @@ from lexora_ai.infrastructure.lvyan_lawtext import (
 from lexora_ai.infrastructure.material_parser import parse_material_file
 from lexora_ai.infrastructure.north_gateway import (
     ModelNotConfiguredError,
+    ModelTemporarilyUnavailableError,
     NorthCaseAnalysisGateway,
 )
 from lexora_ai.infrastructure.openai_embeddings import OpenAIEmbeddingGateway
@@ -19,6 +20,7 @@ from lexora_ai.infrastructure.spc_guiding_cases import (
 
 __all__ = [
     "ModelNotConfiguredError",
+    "ModelTemporarilyUnavailableError",
     "DatabaseCaseLawKnowledgePort",
     "DatabaseLegalKnowledgePort",
     "NorthCaseAnalysisGateway",

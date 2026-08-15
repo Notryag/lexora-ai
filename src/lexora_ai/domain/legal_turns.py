@@ -137,7 +137,13 @@ class LegalTurnFactorUpdate(BaseModel):
     label: str = Field(min_length=1, max_length=120)
     type: FactorType
     state: FactorState
-    value: bool | int | float | str | None = None
+    value: bool | int | float | str | None = Field(
+        default=None,
+        description=(
+            "Canonical user-stated value. Preserve uncertainty and qualifiers: for an approximate "
+            "number use the user's bounded wording such as '约5万元', not an exact 50000."
+        ),
+    )
     materiality: FactorMateriality = FactorMateriality.medium
     question: str | None = Field(
         default=None,
@@ -185,8 +191,22 @@ class LegalTurnPreparation(BaseModel):
     legal_issue: str | None = Field(default=None, max_length=300)
     case_type: str | None = Field(default=None, max_length=200)
     parties: list[str] = Field(default_factory=list, max_length=10)
-    claims: list[str] = Field(default_factory=list, max_length=10)
-    key_facts: list[str] = Field(default_factory=list, max_length=16)
+    claims: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description=(
+            "Relief, outcome, or action explicitly sought by the user. Never place factual "
+            "supplements, evidence, or a paraphrase of the message here."
+        ),
+    )
+    key_facts: list[str] = Field(
+        default_factory=list,
+        max_length=16,
+        description=(
+            "Every concise factual statement explicitly supplied in the current user turn. "
+            "Preserve uncertainty, negation scope, and qualifiers."
+        ),
+    )
     disputed_issues: list[str] = Field(default_factory=list, max_length=8)
     evidence_notes: list[str] = Field(default_factory=list, max_length=8)
     authority_queries: list[str] = Field(default_factory=list, max_length=3)

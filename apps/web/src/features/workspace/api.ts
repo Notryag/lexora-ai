@@ -121,7 +121,7 @@ export async function listMessages(caseId: string): Promise<PersistedMessage[]> 
 type ConversationStreamEvent =
   | { type: "delta"; delta: string }
   | { type: "complete"; result: CaseConversationTurnResult }
-  | { type: "error"; message: string };
+  | { type: "error"; code?: string; message: string };
 
 export async function streamCaseMessage(
   caseId: string,

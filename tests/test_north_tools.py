@@ -7,6 +7,7 @@ import pytest
 from lexora_ai.application import ConversationLegalChunk
 from lexora_ai.domain import (
     CaseProfile,
+    LegalTurnAnswerTarget,
     LegalTurnFactorGroundingReview,
     LegalTurnFollowUpReview,
 )
@@ -59,8 +60,10 @@ class RankedRetrieval(RecordingRetrieval):
 
 
 class RecordingCaseMemory:
-    def __init__(self) -> None:
+    def __init__(self, *, pending_answer_targets=None) -> None:
         self.profile = CaseProfile(missing_information=["房屋购买时间"])
+        if pending_answer_targets is not None:
+            self.profile.pending_answer_targets = pending_answer_targets
         self.patches = []
 
     async def get_profile(self):
@@ -99,6 +102,7 @@ async def test_agent_retrieval_tools_keep_sources_separate() -> None:
 
     assert set(tools) == {
         "prepare_legal_turn",
+        "calculate_employment_termination_compensation",
         "search_case_materials",
         "search_legal_authorities",
         "search_guiding_cases",
@@ -108,6 +112,62 @@ async def test_agent_retrieval_tools_keep_sources_separate() -> None:
 
     assert result["legal_authorities"][0]["article_label"] == "第一条"
     assert retrieval.calls == [("legal", "解除劳动合同的补偿规则")]
+
+
+@pytest.mark.asyncio
+async def test_case_update_resumes_pending_analysis_and_retrieves_authorities() -> None:
+    target = LegalTurnAnswerTarget(
+        question="补充金额后大概会判多久？",
+        mode="conditional",
+        kind="estimate",
+    )
+    memory = RecordingCaseMemory(pending_answer_targets=[target])
+    retrieval = RecordingRetrieval()
+    tools = {
+        tool.name: tool
+        for tool in build_lexora_tools(
+            retrieval,
+            memory,
+            user_message="补充：涉案金额约5万元，已认罪认罚。",
+        )
+    }
+
+    result = await tools["prepare_legal_turn"].ainvoke(
+        {
+            "intent": "case_update",
+            "key_facts": ["涉案金额约5万元", "已认罪认罚"],
+        }
+    )
+
+    assert result["turn_preparation"]["intent"] == "legal_question"
+    assert result["response_contract"]["answer_targets"] == [
+        {
+            "question": "补充金额后大概会判多久？",
+            "mode": "conditional",
+            "kind": "estimate",
+        }
+    ]
+    assert result["legal_authorities"]
+    assert any(kind == "legal" for kind, _ in retrieval.calls)
+
+
+def test_employment_compensation_tool_returns_exact_n_and_2n() -> None:
+    tools = {
+        tool.name: tool
+        for tool in build_lexora_tools(None, None, user_message="公司辞退如何计算赔偿")
+    }
+
+    result = tools["calculate_employment_termination_compensation"].invoke(
+        {
+            "completed_years": 3,
+            "additional_months": 2,
+            "monthly_wage": "10000",
+        }
+    )
+
+    assert result["compensation_months"] == "3.50"
+    assert result["economic_compensation_n"] == "35000.00"
+    assert result["unlawful_termination_damages_2n"] == "70000.00"
 
 
 @pytest.mark.asyncio

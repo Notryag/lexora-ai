@@ -92,6 +92,33 @@ def test_turn_evaluation_rejects_an_overbroad_persisted_factor() -> None:
     ]
 
 
+def test_turn_evaluation_requires_user_facts_in_case_profile() -> None:
+    payload = _turn_result_payload("盗窃案件需要结合金额判断。")
+    payload["case_profile"]["key_facts"] = ["盗窃财物价值约5万元"]  # type: ignore[index]
+    result = CaseConversationTurnResult.model_validate(payload)
+    observation = StreamObservation(
+        result=result,
+        streamed_text=result.assistant_message,
+        delta_events=1,
+        first_token_seconds=0.1,
+        total_seconds=0.2,
+    )
+
+    failures = _evaluate_turn(
+        observation,
+        TurnExpectation(
+            required_key_fact_groups=[
+                ["约5万元", "约五万元"],
+                ["未退赃"],
+            ]
+        ),
+    )
+
+    assert failures == [
+        "case profile key facts are missing one of required terms: ['未退赃']"
+    ]
+
+
 @pytest.mark.asyncio
 async def test_execute_suite_checks_stream_persistence_and_exact_cleanup() -> None:
     requests: list[tuple[str, str]] = []
@@ -208,6 +235,51 @@ async def test_execute_suite_reports_stream_mismatch_and_still_cleans_up() -> No
     assert report["passed"] is False
     assert "streamed text does not equal" in report["failures"][0]
     assert deleted == [f"/api/v1/cases/{CASE_ID}"]
+    assert report["scenarios"][0]["cleanup"] == "deleted"
+
+
+@pytest.mark.asyncio
+async def test_execute_suite_separates_provider_failure_from_answer_quality() -> None:
+    scenario = ConversationEvaluationScenario(
+        id="fixture",
+        title="测试场景",
+        turns=[ConversationEvaluationTurn(message="hi")],
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/health":
+            return httpx.Response(200, json={"status": "ok"})
+        if request.url.path == "/api/v1/cases" and request.method == "POST":
+            return httpx.Response(201, json=_case_payload())
+        if request.url.path.endswith("/messages/stream"):
+            event = {
+                "type": "error",
+                "code": "provider_unavailable",
+                "message": "模型服务暂时不可用，请稍后重试。",
+            }
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "application/x-ndjson"},
+                content=f"{json.dumps(event, ensure_ascii=False)}\n".encode(),
+            )
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(
+        base_url="http://lexora.test",
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        report = await execute_suite(
+            [scenario],
+            base_url="http://lexora.test",
+            client=client,
+        )
+
+    assert report["passed"] is False
+    assert report["quality_passed"] is None
+    assert report["failures"] == []
+    assert "模型服务暂时不可用" in report["infrastructure_failures"][0]
     assert report["scenarios"][0]["cleanup"] == "deleted"
 
 

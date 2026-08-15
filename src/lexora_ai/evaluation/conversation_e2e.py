@@ -27,6 +27,7 @@ EVALUATION_CASE_PREFIX = "[conversation-eval:"
 
 class TurnExpectation(BaseModel):
     required_term_groups: list[list[str]] = Field(default_factory=list)
+    required_key_fact_groups: list[list[str]] = Field(default_factory=list)
     forbidden_terms: list[str] = Field(default_factory=list)
     min_legal_citations: int = Field(default=0, ge=0)
     max_legal_citations: int | None = Field(default=None, ge=0)
@@ -49,7 +50,11 @@ class TurnExpectation(BaseModel):
             and self.max_case_law_citations < self.min_case_law_citations
         ):
             raise ValueError("max_case_law_citations must be at least min_case_law_citations")
-        if any(not group or any(not term.strip() for term in group) for group in self.required_term_groups):
+        if any(
+            not group or any(not term.strip() for term in group)
+            for groups in (self.required_term_groups, self.required_key_fact_groups)
+            for group in groups
+        ):
             raise ValueError("required term groups cannot be empty")
         return self
 
@@ -84,6 +89,10 @@ class ConversationEvaluationSuite(BaseModel):
 
 
 class ConversationEvaluationError(RuntimeError):
+    pass
+
+
+class ConversationEvaluationInfrastructureError(ConversationEvaluationError):
     pass
 
 
@@ -185,6 +194,11 @@ async def execute_suite(
         for scenario_report in scenario_reports
         for failure in scenario_report.get("failures", [])
     ]
+    infrastructure_failures = [
+        failure
+        for scenario_report in scenario_reports
+        for failure in scenario_report.get("infrastructure_failures", [])
+    ]
     completed_at = datetime.now(UTC)
     return {
         "mode": "execute",
@@ -192,7 +206,8 @@ async def execute_suite(
         "base_url": base_url.rstrip("/"),
         "started_at": started_at.isoformat(),
         "completed_at": completed_at.isoformat(),
-        "passed": not failures,
+        "passed": not failures and not infrastructure_failures,
+        "quality_passed": None if infrastructure_failures else not failures,
         "scenario_count": len(scenario_reports),
         "agent_turns": sum(
             len(scenario_report.get("turns", [])) for scenario_report in scenario_reports
@@ -207,6 +222,7 @@ async def execute_suite(
             "Run/event contract. The report does not estimate them."
         ),
         "failures": failures,
+        "infrastructure_failures": infrastructure_failures,
         "scenarios": scenario_reports,
     }
 
@@ -231,6 +247,7 @@ async def _execute_scenario(
         "run_count": 0,
         "turns": turn_reports,
         "failures": failures,
+        "infrastructure_failures": [],
         "cleanup": "kept" if keep_case else "not-created",
     }
     try:
@@ -298,6 +315,20 @@ async def _execute_scenario(
             "failures": failures,
             "cleanup": "kept" if keep_case else "pending",
         }
+    except ConversationEvaluationInfrastructureError as exc:
+        infrastructure_failure = f"{scenario.id}: infrastructure error: {exc}"
+        report = {
+            "id": scenario.id,
+            "title": scenario.title,
+            "case_id": str(case.id) if case else None,
+            "passed": False,
+            "message_count": 0,
+            "run_count": len(turn_reports),
+            "turns": turn_reports,
+            "failures": failures,
+            "infrastructure_failures": [infrastructure_failure],
+            "cleanup": "kept" if keep_case else "pending",
+        }
     except Exception as exc:
         failure = f"{scenario.id}: execution error: {type(exc).__name__}: {exc}"
         failures.append(failure)
@@ -310,6 +341,7 @@ async def _execute_scenario(
             "run_count": len(turn_reports),
             "turns": turn_reports,
             "failures": failures,
+            "infrastructure_failures": [],
             "cleanup": "kept" if keep_case else "pending",
         }
     finally:
@@ -330,7 +362,7 @@ async def _execute_scenario(
                 )
                 failures.append(cleanup_failure)
                 report["cleanup"] = "failed"
-        report["passed"] = not failures
+        report["passed"] = not failures and not report.get("infrastructure_failures", [])
         report["failures"] = failures
     return report
 
@@ -382,7 +414,10 @@ async def _stream_turn(
                     raise ConversationEvaluationError("stream returned multiple complete events")
                 result = CaseConversationTurnResult.model_validate(event.get("result"))
             elif event_type == "error":
-                raise ConversationEvaluationError(str(event.get("message") or "stream failed"))
+                message = str(event.get("message") or "stream failed")
+                if event.get("code") == "provider_unavailable":
+                    raise ConversationEvaluationInfrastructureError(message)
+                raise ConversationEvaluationError(message)
             else:
                 raise ConversationEvaluationError(f"stream returned unknown event type: {event_type}")
     completed = clock()
@@ -415,6 +450,10 @@ def _evaluate_turn(
     for terms in expectation.required_term_groups:
         if not any(term.casefold() in answer.casefold() for term in terms):
             failures.append(f"answer is missing one of required terms: {terms}")
+    key_facts = "\n".join(observation.result.case_profile.key_facts).casefold()
+    for terms in expectation.required_key_fact_groups:
+        if not any(term.casefold() in key_facts for term in terms):
+            failures.append(f"case profile key facts are missing one of required terms: {terms}")
     for term in expectation.forbidden_terms:
         if term.casefold() in answer.casefold():
             failures.append(f"answer contains forbidden repeated or irrelevant prompt: {term}")

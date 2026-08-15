@@ -326,6 +326,28 @@ message is persisted once at submission and the assistant message once at succes
 The browser does not poll the Run or refetch messages while text is streaming; it refreshes durable
 state once after completion.
 
+Authority-reference validation is identical on both paths. A stateful delta filter holds only a
+possible reference marker split across provider chunks, removes markers not returned by retrieval,
+and immediately forwards ordinary text. The same allow-list is applied to the completed answer
+before persistence, so the text a user watches arrive matches durable message history.
+
+The Agent decides from the structured answer target whether a calculation is needed; product-owned
+deterministic tools perform arithmetic where a wrong number would materially harm the answer. For
+employment termination, the calculator returns Article 47 N and conditional 2N amounts, including
+partial-year and optional high-wage caps. It does not decide whether a termination is lawful: the
+Agent must ground that classification in retrieved authority. This pattern keeps semantic routing
+model-driven without delegating exact arithmetic to probabilistic text generation.
+
+Each `CaseProfile` also retains `pending_answer_targets`, the structured questions from the latest
+legal turn. When a later turn is classified as a factual `case_update`, the preparation tool resumes
+those targets and retrieves authorities again before answering. This prevents a multi-turn supplement
+from becoming a write-only acknowledgement while keeping the decision generic for any matter type.
+
+Stream failures carry a stable, non-sensitive product error code. Provider connection failures,
+timeouts, rate limits, and 5xx responses become `provider_unavailable`; they remain failed Runs but
+are not reported as answer-quality failures. Unknown exceptions remain `internal_error`. The API
+never returns raw provider response bodies, credentials, or stack traces to the browser.
+
 The bounded core-conversation evaluation exercises this entire HTTP path with versioned product
 scenarios. It verifies that streamed text equals the final persisted answer, every user turn creates
 one Run with exactly one human and one assistant message, references survive as citation

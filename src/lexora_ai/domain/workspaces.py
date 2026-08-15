@@ -9,6 +9,7 @@ from lexora_ai.domain.case_law import CaseLawCitation
 from lexora_ai.domain.cases import CaseMaterial, MaterialKind
 from lexora_ai.domain.factors import CaseFactorProfile
 from lexora_ai.domain.legal_knowledge import LegalCitation
+from lexora_ai.domain.legal_turns import LegalTurnAnswerTarget
 
 
 class CaseProfile(BaseModel):
@@ -20,6 +21,11 @@ class CaseProfile(BaseModel):
     evidence_notes: list[str] = Field(default_factory=list, max_length=30)
     missing_information: list[str] = Field(default_factory=list, max_length=30)
     factor_profile: CaseFactorProfile = Field(default_factory=CaseFactorProfile)
+    pending_answer_targets: list[LegalTurnAnswerTarget] = Field(
+        default_factory=list,
+        max_length=4,
+        description="Application-maintained targets that a factual follow-up can continue answering.",
+    )
 
     @field_validator("case_type")
     @classmethod
@@ -173,6 +179,11 @@ class CaseProfilePatch(BaseModel):
         default=None,
         description="应用层维护的结构化案件要素画像；仅接受受控更新",
     )
+    pending_answer_targets: list[LegalTurnAnswerTarget] | None = Field(
+        default=None,
+        max_length=4,
+        description="应用层维护的未完成分析目标；不由用户直接填写",
+    )
 
     @model_validator(mode="after")
     def normalize_and_validate(self) -> CaseProfilePatch:
@@ -239,6 +250,11 @@ class CaseProfilePatch(BaseModel):
             evidence_notes=merged(profile.evidence_notes, self.evidence_notes),
             missing_information=[item for item in missing_information if item not in resolved],
             factor_profile=self.factor_profile or profile.factor_profile,
+            pending_answer_targets=(
+                self.pending_answer_targets
+                if self.pending_answer_targets is not None
+                else profile.pending_answer_targets
+            ),
         )
 
 

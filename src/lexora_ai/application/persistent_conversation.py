@@ -52,7 +52,53 @@ logger = logging.getLogger(__name__)
 AUTHORITY_REFERENCE_PATTERN = re.compile(
     r"\[((?:L[A-Za-z0-9-]+:C\d+|C[A-Za-z0-9-]+:S\d+))\]"
 )
+_MAX_PENDING_AUTHORITY_REFERENCE_CHARS = 160
 CitationChunk = TypeVar("CitationChunk")
+
+
+class _AuthorityReferenceDeltaFilter:
+    """Remove unknown authority markers without buffering ordinary response text."""
+
+    def __init__(self, available_references: Callable[[], set[str]]) -> None:
+        self._available_references = available_references
+        self._pending = ""
+
+    def feed(self, delta: str) -> str:
+        self._pending += delta
+        emitted: list[str] = []
+        while self._pending:
+            opening = self._pending.find("[")
+            if opening < 0:
+                emitted.append(self._pending)
+                self._pending = ""
+                break
+            if opening:
+                emitted.append(self._pending[:opening])
+                self._pending = self._pending[opening:]
+            if len(self._pending) == 1:
+                break
+            if self._pending[1] not in {"L", "C"}:
+                emitted.append("[")
+                self._pending = self._pending[1:]
+                continue
+            closing = self._pending.find("]", 2)
+            if closing < 0:
+                if len(self._pending) > _MAX_PENDING_AUTHORITY_REFERENCE_CHARS:
+                    emitted.append("[")
+                    self._pending = self._pending[1:]
+                    continue
+                break
+            candidate = self._pending[: closing + 1]
+            match = AUTHORITY_REFERENCE_PATTERN.fullmatch(candidate)
+            if match is None or match.group(1) in self._available_references():
+                emitted.append(candidate)
+            self._pending = self._pending[closing + 1 :]
+        return "".join(emitted)
+
+    def flush(self) -> str:
+        pending = self._pending
+        self._pending = ""
+        return pending
 
 
 class _AgentControlledCaseMemory:
@@ -344,22 +390,34 @@ class PersistentLegalConversationService:
                 generated = await self._gateway.converse(turn, **gateway_arguments)
             else:
                 emitted_delta = False
+                reference_filter = _AuthorityReferenceDeltaFilter(
+                    lambda: {
+                        *retrieval.legal_authorities,
+                        *retrieval.case_law_authorities,
+                    }
+                )
 
                 def emit_delta(delta: str) -> None:
                     nonlocal emitted_delta
-                    emitted_delta = True
-                    on_text_delta(delta)
+                    filtered = reference_filter.feed(delta)
+                    if filtered:
+                        emitted_delta = True
+                        on_text_delta(filtered)
 
                 generated = await self._gateway.converse_stream(
                     turn,
                     on_text_delta=emit_delta,
                     **gateway_arguments,
                 )
+                tail = reference_filter.flush()
+                if tail:
+                    emitted_delta = True
+                    on_text_delta(tail)
             content = _strip_unavailable_authority_references(
-                generated.content.strip(),
+                generated.content,
                 {*retrieval.legal_authorities, *retrieval.case_law_authorities},
             )
-            if not content:
+            if not content.strip():
                 raise RuntimeError("conversation provider returned an empty response")
             if on_text_delta is not None and not emitted_delta:
                 on_text_delta(content)

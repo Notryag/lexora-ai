@@ -15,6 +15,7 @@ from north import (
     build_agent,
 )
 from north.runtime import RunManager
+from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 
 from lexora_ai.application import (
     ConversationCaseLawChunk,
@@ -44,6 +45,10 @@ class ModelNotConfiguredError(RuntimeError):
     pass
 
 
+class ModelTemporarilyUnavailableError(RuntimeError):
+    pass
+
+
 class NorthCaseAnalysisGateway:
     def __init__(self, settings: Settings, *, checkpointer=None) -> None:
         self._settings = settings
@@ -58,11 +63,22 @@ class NorthCaseAnalysisGateway:
         analysis_id: UUID,
     ) -> GeneratedCaseAnalysis:
         client = self._get_client()
-        response = await asyncio.to_thread(
-            client.chat,
-            build_case_analysis_prompt(request),
-            thread_id=str(analysis_id),
-        )
+        try:
+            response = await asyncio.to_thread(
+                client.chat,
+                build_case_analysis_prompt(request),
+                thread_id=str(analysis_id),
+            )
+        except (APIConnectionError, APITimeoutError, RateLimitError) as exc:
+            raise ModelTemporarilyUnavailableError(
+                "模型服务暂时不可用，请稍后重试。"
+            ) from exc
+        except APIStatusError as exc:
+            if exc.status_code >= 500:
+                raise ModelTemporarilyUnavailableError(
+                    "模型服务暂时不可用，请稍后重试。"
+                ) from exc
+            raise
         return GeneratedCaseAnalysis(
             content=str(response),
             runtime_thread_id=response.thread_id,
@@ -176,30 +192,41 @@ class NorthCaseAnalysisGateway:
         configurable = {"thread_id": resolved_thread_id}
         if checkpoint_id is not None:
             configurable["checkpoint_id"] = checkpoint_id
-        result = await RunExecutor(MemoryStreamBridge(), manager).execute(
-            record,
-            agent_factory=lambda: build_agent(
-                self._get_config(),
-                tools=build_lexora_tools(
-                    retrieval,
-                    case_memory,
-                    user_message=request.message,
-                    jurisdiction=self._settings.legal_jurisdiction,
-                    follow_up_reviewer=self._follow_up_reviewer,
-                    factor_update_reviewer=self._follow_up_reviewer,
+        try:
+            result = await RunExecutor(MemoryStreamBridge(), manager).execute(
+                record,
+                agent_factory=lambda: build_agent(
+                    self._get_config(),
+                    tools=build_lexora_tools(
+                        retrieval,
+                        case_memory,
+                        user_message=request.message,
+                        jurisdiction=self._settings.legal_jurisdiction,
+                        follow_up_reviewer=self._follow_up_reviewer,
+                        factor_update_reviewer=self._follow_up_reviewer,
+                    ),
+                    additional_middlewares=[LegalTurnPreparationMiddleware()],
+                    checkpointer=self._checkpointer,
                 ),
-                additional_middlewares=[LegalTurnPreparationMiddleware()],
-                checkpointer=self._checkpointer,
-            ),
-            graph_input={"messages": graph_messages},
-            config={
-                "configurable": configurable,
-                "recursion_limit": self._get_config().recursion_limit,
-            },
-            context={"thread_id": resolved_thread_id, "run_id": resolved_run_id},
-            stream_observer=observe,
-            publish_modes=(),
-        )
+                graph_input={"messages": graph_messages},
+                config={
+                    "configurable": configurable,
+                    "recursion_limit": self._get_config().recursion_limit,
+                },
+                context={"thread_id": resolved_thread_id, "run_id": resolved_run_id},
+                stream_observer=observe,
+                publish_modes=(),
+            )
+        except (APIConnectionError, APITimeoutError, RateLimitError) as exc:
+            raise ModelTemporarilyUnavailableError(
+                "模型服务暂时不可用，请稍后重试。"
+            ) from exc
+        except APIStatusError as exc:
+            if exc.status_code >= 500:
+                raise ModelTemporarilyUnavailableError(
+                    "模型服务暂时不可用，请稍后重试。"
+                ) from exc
+            raise
         content = _final_assistant_text(result.values)
         if not content:
             raise RuntimeError("North did not return an assistant message")

@@ -32,7 +32,10 @@ The versioned suite contains five scenarios and six total user turns:
 Automated assertions cover response length, question count, required answer concepts, repeated or
 irrelevant prompts, citation counts, delta count, streamed/final text equality, message ordering,
 one human plus one assistant message per Run, latest Run completion, and prohibited factor-state
-expansions in the persisted case profile. Each turn also includes a manual review rubric because
+expansions in the persisted case profile. Multi-turn scenarios can also require factual supplements
+to appear in durable `case_profile.key_facts`, which catches answers that use a new fact without
+actually remembering it. The employment scenario asserts the exact N and 2N amounts rather than
+accepting a merely plausible explanation. Each turn also includes a manual review rubric because
 legal usefulness cannot be reduced to keyword assertions.
 
 ## Cost And Safety
@@ -74,3 +77,9 @@ turn's manual rubric before accepting a behavior change.
 The report exits with status 1 when an automated assertion fails. A failed assertion should first be
 classified as a product defect, an unstable model behavior, or an evaluation-fixture defect. Do not
 respond by adding scenario keywords to production code.
+
+Provider connection failures, timeouts, rate limits, and 5xx responses are reported separately under
+`infrastructure_failures`. When any selected scenario does not reach an answer for that reason,
+`quality_passed` is `null`: the run is unsuccessful, but the report does not pretend to have measured
+answer quality. Bounded evaluation does not add an outer retry loop on top of the provider SDK's own
+retry behavior.

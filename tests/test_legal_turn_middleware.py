@@ -5,6 +5,7 @@ from unittest.mock import Mock
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
 from langchain_core.messages import HumanMessage, ToolMessage
 
+from lexora_ai.infrastructure.case_analyst import CASE_ANALYST_TOOL
 from lexora_ai.infrastructure.legal_turn_middleware import (
     PREPARE_LEGAL_TURN_TOOL,
     LegalTurnPreparationMiddleware,
@@ -13,14 +14,20 @@ from lexora_ai.infrastructure.legal_turn_middleware import (
 
 
 def _request(messages: list[object]) -> ModelRequest:
+    assessment = Mock(name="assessment_tool")
+    assessment.name = CASE_ANALYST_TOOL
     preparation = Mock(name="preparation_tool")
     preparation.name = PREPARE_LEGAL_TURN_TOOL
     search = Mock(name="search_tool")
     search.name = "search_legal_authorities"
-    return ModelRequest(model=Mock(), messages=messages, tools=[preparation, search])
+    return ModelRequest(
+        model=Mock(),
+        messages=messages,
+        tools=[assessment, preparation, search],
+    )
 
 
-def test_first_model_call_is_forced_to_prepare_turn() -> None:
+def test_first_model_call_must_choose_preparation_or_case_assessment() -> None:
     middleware = LegalTurnPreparationMiddleware()
     captured: list[ModelRequest] = []
 
@@ -29,11 +36,60 @@ def test_first_model_call_is_forced_to_prepare_turn() -> None:
         lambda request: captured.append(request) or ModelResponse(result=[]),
     )
 
+    assert captured[0].tool_choice == "required"
+    assert [tool.name for tool in captured[0].tools] == [
+        CASE_ANALYST_TOOL,
+        PREPARE_LEGAL_TURN_TOOL,
+    ]
+
+
+def test_legal_assessment_is_followed_by_forced_preparation() -> None:
+    messages = [
+        HumanMessage(content="入户盗窃会判多久？"),
+        ToolMessage(
+            name=CASE_ANALYST_TOOL,
+            content=(
+                '{"subagent":"case_analyst","result":'
+                '{"intent":"legal_question"}}'
+            ),
+            tool_call_id="assessment-1",
+        ),
+    ]
+    captured: list[ModelRequest] = []
+
+    LegalTurnPreparationMiddleware().wrap_model_call(
+        _request(messages),
+        lambda request: captured.append(request) or ModelResponse(result=[]),
+    )
+
     assert captured[0].tool_choice == {
         "type": "function",
         "name": PREPARE_LEGAL_TURN_TOOL,
     }
     assert [tool.name for tool in captured[0].tools] == [PREPARE_LEGAL_TURN_TOOL]
+
+
+def test_social_assessment_unlocks_direct_response_without_preparation() -> None:
+    messages = [
+        HumanMessage(content="hi"),
+        ToolMessage(
+            name=CASE_ANALYST_TOOL,
+            content=(
+                '{"subagent":"case_analyst","result":'
+                '{"intent":"social"}}'
+            ),
+            tool_call_id="assessment-1",
+        ),
+    ]
+    captured: list[ModelRequest] = []
+
+    LegalTurnPreparationMiddleware().wrap_model_call(
+        _request(messages),
+        lambda request: captured.append(request) or ModelResponse(result=[]),
+    )
+
+    assert captured[0].tool_choice is None
+    assert [tool.name for tool in captured[0].tools] == ["search_legal_authorities"]
 
 
 def test_successful_preparation_unlocks_final_model_call() -> None:

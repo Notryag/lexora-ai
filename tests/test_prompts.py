@@ -64,12 +64,13 @@ def test_conversation_prompt_delegates_retrieval_choice_to_agent() -> None:
     )
     payload = json.loads(prompt.split("<case_data>", maxsplit=1)[1].removesuffix("</case_data>"))
 
-    assert "先调用 prepare_legal_turn" in prompt
+    assert "首次必须选择 prepare_legal_turn" in prompt
     assert "turn_preparation" in LEXORA_SYSTEM_PROMPT
-    assert "普通寒暄简短自然地回应" in LEXORA_SYSTEM_PROMPT
+    assert "普通寒暄只回应问候" in LEXORA_SYSTEM_PROMPT
     assert "response_contract.follow_up_questions" in LEXORA_SYSTEM_PROMPT
     assert "不要追问法域" in LEXORA_SYSTEM_PROMPT
     assert "必须展示条件分支" in LEXORA_SYSTEM_PROMPT
+    assert "用户问题的通常语义前提" in LEXORA_SYSTEM_PROMPT
     assert payload["capabilities"] == {"retrieval": True, "case_memory": True}
     assert payload["retrieved_material_chunks"] == []
     assert "factor_schema" not in payload
@@ -85,7 +86,7 @@ def test_conversation_prompt_delegates_preparation_to_runtime_tool() -> None:
         case_memory_available=True,
     )
 
-    assert "按工具 schema 提交本轮结构化准备" in prompt
+    assert "其返回后再调用 prepare_legal_turn" in prompt
     assert "prepare_legal_turn" in prompt
     assert "法定区间不等于具体" in LEXORA_SYSTEM_PROMPT
     assert "目前只能说明一般原则，不能判断具体结果" not in LEXORA_SYSTEM_PROMPT

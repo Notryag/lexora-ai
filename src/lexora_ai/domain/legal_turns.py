@@ -214,6 +214,117 @@ class LegalTurnFactorGroundingReview(BaseModel):
         return value.strip()
 
 
+class LegalTurnAssessment(BaseModel):
+    """Case Analyst output before research planning or business-memory updates."""
+
+    intent: LegalTurnIntent = Field(
+        description=(
+            "Classify as social, factual case_update, or legal_question. A factual supplement "
+            "without a new question is case_update."
+        )
+    )
+    legal_issue: str | None = Field(
+        default=None,
+        max_length=300,
+        description="Single legal issue raised by a legal question; omit for other intents.",
+    )
+    case_type: str | None = Field(
+        default=None,
+        max_length=200,
+        description="Concise matter type supported by the user's wording; omit when unclear.",
+    )
+    parties: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Parties and roles explicitly identified by the user.",
+    )
+    claims: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Relief, outcome, or action explicitly sought by the user.",
+    )
+    key_facts: list[str] = Field(
+        default_factory=list,
+        max_length=16,
+        description=(
+            "Every concise fact explicitly supplied in the current user turn. Preserve "
+            "uncertainty, negation scope, and qualifiers."
+        ),
+    )
+    disputed_issues: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Disputes expressly raised by the user; do not infer additional disputes.",
+    )
+    evidence_notes: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Evidence the user says exists or can be obtained; never infer evidence.",
+    )
+    answer_targets: list[LegalTurnAnswerTarget] = Field(
+        default_factory=list,
+        max_length=4,
+        description="Every question the user actually asks, without adding issues.",
+    )
+    factor_updates: list[LegalTurnFactorUpdate] = Field(
+        default_factory=list,
+        max_length=12,
+        description=(
+            "Small set of current-turn case facts. Never include legal rules, offenses, "
+            "liability, predictions, research queries, or generic warnings."
+        ),
+    )
+
+    @field_validator("legal_issue", "case_type", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        return value.strip() or None
+
+    @field_validator(
+        "parties",
+        "claims",
+        "key_facts",
+        "disputed_issues",
+        "evidence_notes",
+    )
+    @classmethod
+    def normalize_items(cls, value: list[str]) -> list[str]:
+        result: list[str] = []
+        for item in value:
+            text = item.strip()
+            if text and text not in result:
+                result.append(text)
+        return result
+
+    @model_validator(mode="after")
+    def validate_intent_payload(self) -> LegalTurnAssessment:
+        if self.intent == LegalTurnIntent.legal_question and not self.legal_issue:
+            raise ValueError("legal_question requires legal_issue")
+        if self.intent == LegalTurnIntent.legal_question and not self.answer_targets:
+            raise ValueError("legal_question requires at least one answer target")
+        if self.intent != LegalTurnIntent.legal_question and self.answer_targets:
+            raise ValueError("only legal_question turns can define answer targets")
+        factor_keys = [factor.key for factor in self.factor_updates]
+        if len(factor_keys) != len(set(factor_keys)):
+            raise ValueError("factor update keys must be unique")
+        if self.intent == LegalTurnIntent.social and any(
+            (
+                self.legal_issue,
+                self.case_type,
+                self.parties,
+                self.claims,
+                self.key_facts,
+                self.disputed_issues,
+                self.evidence_notes,
+                self.factor_updates,
+            )
+        ):
+            raise ValueError("social turns cannot contain case analysis")
+        return self
+
+
 class LegalTurnPreparation(BaseModel):
     intent: LegalTurnIntent = Field(
         description=(

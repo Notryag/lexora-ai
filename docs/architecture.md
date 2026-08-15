@@ -359,6 +359,33 @@ already exists. Changing the prompt or tool schema can cause a one-time cache-pr
 deployment, but it does not invalidate the new stable prefix on every turn; provider cache and usage
 metrics remain the final production check.
 
+The target conversation architecture is a thin product Run boundary around a North-owned legal
+Supervisor. The Supervisor may delegate bounded work to Lexora-owned Case Analyst, Legal Researcher,
+and Material Analyst subagents. Skills describe each specialist's method, while explicitly assigned
+tools provide capabilities. Subagents return typed artifacts and never write product messages,
+business memory, or Runs. `CaseContextService` remains the only future writer for validated case
+profile patches, and the Supervisor remains the only generator of the final user-facing response.
+
+This target does not require one large fixed LangGraph workflow. North owns the generic stateless
+delegation primitive, callback and cancellation propagation, and subagent event attribution; Lexora
+owns legal roles, schemas, routing descriptions, evidence rules, and persistence. Migration remains
+incremental: retain `prepare_legal_turn` until Case Analyst and Legal Researcher reach behavioral
+parity under the existing conversation evaluation suite.
+
+The first migration slice pins North's bounded Subagent contract and registers one tool-less Case
+Analyst with a typed `LegalTurnAssessment` result. On the first internal model call, the Supervisor
+must choose either the existing preparation fast path or Case Analyst delegation. A successful
+non-social assessment is followed by the existing preparation compatibility step; a social result
+can be answered directly. This keeps greetings and simple turns fast while allowing fact-rich turns
+to isolate case framing. Case Analyst cannot retrieve, persist, or answer, and `prepare_legal_turn`
+remains the only current path to factor review, case-profile staging, and retrieval.
+
+The bounded live check retained one product Run and one final message per turn. A greeting completed
+in about 4.3 seconds without a follow-up question. The marriage-overlap scenario produced grounded
+negative factors, official citations, and a direct two-part answer in about 33 seconds. Equivalent
+wording for “cannot infer bigamy from these facts” was added to the evaluator vocabulary rather than
+adding scenario terms to production routing.
+
 Stream failures carry a stable, non-sensitive product error code. Provider connection failures,
 timeouts, rate limits, and 5xx responses become `provider_unavailable`; they remain failed Runs but
 are not reported as answer-quality failures. Unknown exceptions remain `internal_error`. The API

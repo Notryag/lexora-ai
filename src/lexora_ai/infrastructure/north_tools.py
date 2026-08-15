@@ -443,13 +443,11 @@ def build_lexora_tools(
             coroutine=prepare_legal_turn,
             name=PREPARE_LEGAL_TURN_TOOL,
             description=(
-                "Prepare one Lexora conversation turn before any response. Classify intent, extract "
-                "user-stated case facts and material decision factors, identify the questions to "
-                "answer, and request focused legal, case-material, or case-law retrieval. Use this "
-                "exactly once at the start of every turn, including greetings and factual "
-                "supplements. Its result provides the authoritative response contract, staged case "
-                "profile, and the only retrieved references available for the answer. Do not answer "
-                "until it returns; use later retrieval or calculation tools only when needed."
+                "Prepare one Lexora turn directly when specialist case framing is unnecessary, or "
+                "after the Case Analyst returns for a fact-rich case. Classify intent, preserve "
+                "grounded facts and answer targets, and add focused authority, material, or case-law "
+                "queries. Its result provides the response contract, staged case profile, and "
+                "retrieved references. Do not answer a legal question until it returns."
             ),
             args_schema=LegalTurnPreparation,
         )

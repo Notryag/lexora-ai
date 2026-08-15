@@ -68,6 +68,7 @@ def test_conversation_prompt_delegates_retrieval_choice_to_agent() -> None:
     assert "turn_preparation" in LEXORA_SYSTEM_PROMPT
     assert "普通寒暄简短自然地回应" in LEXORA_SYSTEM_PROMPT
     assert "最多两个问题" in LEXORA_SYSTEM_PROMPT
+    assert "不要追问法域" in LEXORA_SYSTEM_PROMPT
     assert "必须展示条件分支" in LEXORA_SYSTEM_PROMPT
     assert payload["capabilities"] == {"retrieval": True, "case_memory": True}
     assert payload["retrieved_material_chunks"] == []

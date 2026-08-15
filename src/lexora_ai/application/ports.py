@@ -7,11 +7,14 @@ from uuid import UUID
 
 from lexora_ai.domain import (
     CaseAnalysisRequest,
+    CaseFactorProfile,
     CaseLawChunk,
     CaseProfile,
     CaseProfilePatch,
     ConversationTurnRequest,
     LegalKnowledgeChunk,
+    LegalTurnFollowUpReview,
+    LegalTurnPreparation,
 )
 
 
@@ -83,6 +86,16 @@ class ConversationCaseMemoryPort(Protocol):
     async def get_profile(self) -> CaseProfile: ...
 
     async def update_profile(self, patch: CaseProfilePatch) -> CaseProfile: ...
+
+
+class FollowUpReviewerPort(Protocol):
+    async def review(
+        self,
+        *,
+        user_message: str,
+        preparation: LegalTurnPreparation,
+        factor_profile: CaseFactorProfile,
+    ) -> list[LegalTurnFollowUpReview]: ...
 
 
 class CaseAnalysisGateway(Protocol):

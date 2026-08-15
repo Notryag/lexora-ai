@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     lexora_host: str = "127.0.0.1"
     lexora_port: int = Field(default=8010, ge=1, le=65_535)
     lexora_log_level: str = "info"
+    legal_jurisdiction: str = Field(default="中国大陆", min_length=1, max_length=80)
     legal_source_repository_path: Path = Path("../lvyan-lawtext")
 
     @property

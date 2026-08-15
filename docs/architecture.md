@@ -262,11 +262,33 @@ completed persisted message pairs. Later turns reuse the committed runtime threa
 successful checkpoint, and add only the new user turn. Failed or cancelled partial checkpoints never
 advance either Thread pointer. The current case profile remains product-owned context, and the Agent may
 retrieve private evidence, verified legal authorities, or reviewed cases through separate tools.
-The preparation schema limits each turn to two prioritized decision factor keys. The sufficiency gate
-accepts only factors present in the merged profile and filters factors already asserted, denied, or
-conflicting before returning their canonical questions. The final response must answer from prepared
-facts and authorities before asking the remaining questions; missing facts do not block a bounded
-provisional analysis.
+The preparation schema requires an explicit answer target for every question the user actually asked.
+Each target is marked `direct` or `conditional`; neither mode permits withholding the current answer.
+The model may separately propose up to four follow-up candidates, each tied to a dynamic factor and a
+specific impact on liability, legal range, amount, or next action. The sufficiency gate returns at
+most two candidates only when their factor exists, remains unknown, is high-materiality, and has a
+canonical question. Factors already asserted, denied, conflicting, or resolved for the current turn
+are filtered before the final model call.
+
+Ordinary-language framing can necessarily resolve a factor without making it a durable user-confirmed
+fact. When preparation proposes follow-up candidates, the runtime forces a separate, focused model
+step before final generation. That review must cover every candidate exactly once, classify its
+`context_status` as `explicit`, `entailed`, `partially_resolved`, or `unresolved`, and give a short
+`context_basis`. A compound candidate is `partially_resolved` when any component is already known and
+must be rejected rather than asked as a mixed question. Only wholly `unresolved` candidates can pass
+the deterministic gate. `entailed` affects only the current
+sufficiency decision and is never merged into `CaseFactorProfile`. Turns without candidates eligible
+for automatic follow-up skip the extra review call. This prevents repeated questions without silently
+converting an inference into case memory. The final response must cover every answer target from
+prepared facts and authorities before asking only the questions admitted by the gate; missing facts
+do not block a bounded provisional analysis.
+
+Answer targets also declare whether the requested deliverable is a rule explanation, classification,
+estimate, calculation, or action. Rule and classification targets receive direct or conditional
+answers without automatic follow-up questions. Only estimate, calculation, and action targets can
+send a missing factor to review. Unknown factors that do not pass this gate are removed from the
+committed case profile; asserted, denied, and conflicting user facts remain. This keeps rejected model
+hypotheses from becoming durable case state.
 
 Factor discovery has two different lifecycles. Online extraction creates and updates factors scoped to
 one user's case, so an unseen matter type remains usable immediately. Offline discovery reads batches

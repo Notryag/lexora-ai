@@ -5,12 +5,22 @@ import asyncio
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
-from lexora_ai.application import ConversationCaseMemoryPort, ConversationRetrievalPort
+from lexora_ai.application import (
+    ConversationCaseMemoryPort,
+    ConversationRetrievalPort,
+    FollowUpReviewerPort,
+)
 from lexora_ai.domain import (
     CaseFactorProfile,
     CaseProfile,
     CaseProfilePatch,
+    FactorState,
+    LegalTurnAnswerKind,
+    LegalTurnAnswerTarget,
+    LegalTurnContextStatus,
     LegalTurnFactorUpdate,
+    LegalTurnFollowUpCandidate,
+    LegalTurnFollowUpReview,
     LegalTurnIntent,
     LegalTurnPreparation,
     SufficiencyGate,
@@ -20,6 +30,11 @@ from lexora_ai.infrastructure.legal_turn_middleware import PREPARE_LEGAL_TURN_TO
 _SUFFICIENCY_GATE = SufficiencyGate()
 _AUTHORITY_QUERY_LIMIT = 4
 _AUTHORITY_SEARCH_CONCURRENCY = 2
+_FOLLOW_UP_ELIGIBLE_ANSWER_KINDS = {
+    LegalTurnAnswerKind.estimate,
+    LegalTurnAnswerKind.calculation,
+    LegalTurnAnswerKind.action,
+}
 
 
 class LegalContextSearchInput(BaseModel):
@@ -137,13 +152,67 @@ def _apply_factor_updates(
     return profile.apply_updates(updates)
 
 
+def _profile_for_commit(
+    profile: CaseFactorProfile,
+    admitted_factor_keys: set[str],
+) -> CaseFactorProfile:
+    committed = profile.model_copy(deep=True)
+    committed.factors = [
+        factor
+        for factor in committed.factors
+        if factor.state != FactorState.unknown or factor.key in admitted_factor_keys
+    ]
+    return committed
+
+
 def build_lexora_tools(
     retrieval: ConversationRetrievalPort | None,
     case_memory: ConversationCaseMemoryPort | None,
     *,
     user_message: str = "",
+    jurisdiction: str = "中国大陆",
+    follow_up_reviewer: FollowUpReviewerPort | None = None,
 ) -> list[StructuredTool]:
     tools: list[StructuredTool] = []
+
+    def response_contract(
+        preparation: LegalTurnPreparation,
+        questions,
+        factor_profile: CaseFactorProfile,
+    ) -> dict[str, object]:
+        known_factors = [
+            factor for factor in factor_profile.factors if factor.state != FactorState.unknown
+        ]
+        return {
+            "answer_current_question_first": True,
+            "jurisdiction": jurisdiction,
+            "jurisdiction_confirmation_required": False,
+            "answer_targets": [
+                target.model_dump(mode="json") for target in preparation.answer_targets
+            ],
+            "maximum_follow_up_questions": len(questions),
+            "exact_outcome_prediction_allowed": False,
+            "separate_known_facts_from_conditions": True,
+            "do_not_reask_known_facts": True,
+            "do_not_introduce_hypotheticals_contrary_to_known_facts": True,
+            "known_factor_constraints": [
+                {
+                    "key": factor.key,
+                    "label": factor.label,
+                    "state": factor.state.value,
+                    "value": factor.value,
+                }
+                for factor in known_factors
+            ],
+            "prohibited_counterfactual_factor_keys": [
+                factor.key
+                for factor in known_factors
+                if factor.state == FactorState.denied or factor.value is False
+            ],
+            "follow_up_questions": [
+                question.model_dump(mode="json") for question in questions
+            ],
+        }
 
     async def prepare_legal_turn(
         intent: LegalTurnIntent,
@@ -157,7 +226,8 @@ def build_lexora_tools(
         authority_queries: list[str] | None = None,
         material_query: str | None = None,
         case_law_query: str | None = None,
-        decision_factor_keys: list[str] | None = None,
+        answer_targets: list[LegalTurnAnswerTarget] | None = None,
+        follow_up_candidates: list[LegalTurnFollowUpCandidate] | None = None,
         factor_updates: list[LegalTurnFactorUpdate] | None = None,
     ) -> dict[str, object]:
         preparation = LegalTurnPreparation(
@@ -172,7 +242,8 @@ def build_lexora_tools(
             authority_queries=authority_queries or [],
             material_query=material_query,
             case_law_query=case_law_query,
-            decision_factor_keys=decision_factor_keys or [],
+            answer_targets=answer_targets or [],
+            follow_up_candidates=follow_up_candidates or [],
             factor_updates=factor_updates or [],
         )
 
@@ -184,11 +255,47 @@ def build_lexora_tools(
                 current_profile.factor_profile,
                 preparation.factor_updates,
             )
-            sufficiency = _SUFFICIENCY_GATE.evaluate(
-                intent=preparation.intent,
-                factor_profile=factor_profile_for_turn,
-                decision_factor_keys=preparation.decision_factor_keys,
+        elif preparation.intent != LegalTurnIntent.social:
+            factor_profile_for_turn = _apply_factor_updates(
+                CaseFactorProfile(),
+                preparation.factor_updates,
             )
+
+        reviews: list[LegalTurnFollowUpReview] = []
+        review_needed = any(
+            preparation.answer_targets[candidate.answer_target_index].kind
+            in _FOLLOW_UP_ELIGIBLE_ANSWER_KINDS
+            for candidate in preparation.follow_up_candidates
+        )
+        if review_needed:
+            if follow_up_reviewer is not None:
+                reviews = await follow_up_reviewer.review(
+                    user_message=user_message,
+                    preparation=preparation,
+                    factor_profile=factor_profile_for_turn,
+                )
+            else:
+                reviews = [
+                    LegalTurnFollowUpReview(
+                        factor_key=candidate.factor_key,
+                        context_status=LegalTurnContextStatus.partially_resolved,
+                        context_basis="追问审核器未配置，本轮保守地不追加问题。",
+                    )
+                    for candidate in preparation.follow_up_candidates
+                ]
+        sufficiency = _SUFFICIENCY_GATE.evaluate(
+            intent=preparation.intent,
+            factor_profile=factor_profile_for_turn,
+            answer_targets=preparation.answer_targets,
+            follow_up_candidates=preparation.follow_up_candidates,
+            follow_up_reviews=reviews,
+        )
+        if case_memory is not None and preparation.intent != LegalTurnIntent.social:
+            admitted_factor_keys = {
+                question.factor_key
+                for question in sufficiency.follow_up_questions
+                if question.factor_key is not None
+            }
             profile = await case_memory.update_profile(
                 CaseProfilePatch(
                     case_type=preparation.case_type,
@@ -200,24 +307,11 @@ def build_lexora_tools(
                     missing_information=[
                         question.question for question in sufficiency.follow_up_questions
                     ],
-                    factor_profile=factor_profile_for_turn,
+                    factor_profile=_profile_for_commit(
+                        factor_profile_for_turn,
+                        admitted_factor_keys,
+                    ),
                 )
-            )
-        elif preparation.intent != LegalTurnIntent.social:
-            factor_profile_for_turn = _apply_factor_updates(
-                CaseFactorProfile(),
-                preparation.factor_updates,
-            )
-            sufficiency = _SUFFICIENCY_GATE.evaluate(
-                intent=preparation.intent,
-                factor_profile=factor_profile_for_turn,
-                decision_factor_keys=preparation.decision_factor_keys,
-            )
-        else:
-            sufficiency = _SUFFICIENCY_GATE.evaluate(
-                intent=preparation.intent,
-                factor_profile=factor_profile_for_turn,
-                decision_factor_keys=[],
             )
 
         legal_rankings = []
@@ -243,7 +337,16 @@ def build_lexora_tools(
                 "intent": preparation.intent.value,
                 "legal_issue": preparation.legal_issue,
                 "user_stated_facts": preparation.key_facts,
-                "decision_factor_keys": preparation.decision_factor_keys,
+                "answer_targets": [
+                    target.model_dump(mode="json") for target in preparation.answer_targets
+                ],
+                "follow_up_candidates": [
+                    candidate.model_dump(mode="json")
+                    for candidate in preparation.follow_up_candidates
+                ],
+                "follow_up_review": [
+                    review.model_dump(mode="json") for review in reviews
+                ],
                 "factor_updates": [
                     factor_update.model_dump(mode="json")
                     for factor_update in preparation.factor_updates
@@ -267,17 +370,11 @@ def build_lexora_tools(
                 _material_chunk_payload(chunk) for chunk in material_chunks
             ],
             "case_law_authorities": [_case_law_chunk_payload(chunk) for chunk in case_law_chunks],
-            "response_contract": {
-                "answer_current_question_first": sufficiency.answer_now,
-                "maximum_follow_up_questions": len(sufficiency.follow_up_questions),
-                "exact_outcome_prediction_allowed": False,
-                "separate_known_facts_from_conditions": True,
-                "do_not_reask_known_facts": True,
-                "do_not_introduce_hypotheticals_contrary_to_known_facts": True,
-                "follow_up_questions": [
-                    question.model_dump(mode="json") for question in sufficiency.follow_up_questions
-                ],
-            },
+            "response_contract": response_contract(
+                preparation,
+                sufficiency.follow_up_questions,
+                factor_profile_for_turn,
+            ),
         }
 
     tools.append(
@@ -295,8 +392,14 @@ def build_lexora_tools(
                 "in case_profile whenever the dimension exists. A factor is a case fact, never a "
                 "legal conclusion, prediction, statute, or generic warning. Use asserted or denied "
                 "only for facts explicit in the current user turn; use unknown only for facts that "
-                "would materially change the current answer. Set decision_factor_keys to at most "
-                "two unknown factor keys. Never select an asserted or denied factor for follow-up. "
+                "would materially change the current answer. Restate every question the user "
+                "actually asked in answer_targets and choose direct or conditional response mode. "
+                "Classify each target as rule, classification, estimate, calculation, or action. "
+                "Rule explanations and classifications must be answered with bounded branches and "
+                "do not trigger automatic follow-up questions. "
+                "Propose follow_up_candidates only when the answer could change liability, the legal "
+                "range, an amount, or the user's next action. The application admits at most two "
+                "high-materiality unknown factors after a separate context review. "
                 "The tool stages case memory and performs the required retrieval as one structured "
                 "step. Use material_query or case_law_query only when those sources would materially "
                 "help. Do not answer the user until this tool returns."

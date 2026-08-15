@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from lexora_ai.application import ConversationLegalChunk
-from lexora_ai.domain import CaseProfile
+from lexora_ai.domain import CaseProfile, LegalTurnFollowUpReview
 from lexora_ai.infrastructure.north_tools import build_lexora_tools
 
 
@@ -68,6 +68,14 @@ class RecordingCaseMemory:
         return self.profile
 
 
+class StaticReviewer:
+    def __init__(self, reviews: list[dict[str, object]]) -> None:
+        self.reviews = [LegalTurnFollowUpReview.model_validate(review) for review in reviews]
+
+    async def review(self, **_kwargs):
+        return self.reviews
+
+
 @pytest.mark.asyncio
 async def test_agent_retrieval_tools_keep_sources_separate() -> None:
     retrieval = RecordingRetrieval()
@@ -98,6 +106,20 @@ async def test_prepare_legal_turn_stages_profile_and_runs_multiple_authority_que
             retrieval,
             memory,
             user_message="公司辞退我能要什么补偿？",
+            follow_up_reviewer=StaticReviewer(
+                [
+                    {
+                        "factor_key": "labor.termination.reason",
+                        "context_status": "unresolved",
+                        "context_basis": "用户没有说明公司提出的解除理由。",
+                    },
+                    {
+                        "factor_key": "labor.termination.service_years",
+                        "context_status": "unresolved",
+                        "context_basis": "用户没有说明工作年限。",
+                    },
+                ]
+            ),
         )
     }
 
@@ -111,9 +133,26 @@ async def test_prepare_legal_turn_stages_profile_and_runs_multiple_authority_que
             "parties": ["用户（劳动者）", "公司（用人单位）"],
             "key_facts": ["公司已经通知用户解除劳动合同"],
             "authority_queries": ["经济补偿计算标准", "违法解除赔偿金"],
-            "decision_factor_keys": [
-                "labor.termination.reason",
-                "labor.termination.service_years",
+            "answer_targets": [
+                {
+                    "question": "公司辞退后可以主张什么补偿？",
+                    "mode": "conditional",
+                    "kind": "calculation",
+                }
+            ],
+            "follow_up_candidates": [
+                {
+                    "factor_key": "labor.termination.reason",
+                    "answer_target_index": 0,
+                    "impact": "liability",
+                    "reason": "解除理由会影响经济补偿或违法解除赔偿责任。",
+                },
+                {
+                    "factor_key": "labor.termination.service_years",
+                    "answer_target_index": 0,
+                    "impact": "amount",
+                    "reason": "工作年限会改变经济补偿的计算金额。",
+                },
             ],
             "factor_updates": [
                 {
@@ -163,10 +202,14 @@ async def test_prepare_legal_turn_stages_profile_and_runs_multiple_authority_que
         {
             "factor_key": "labor.termination.reason",
             "question": "公司或劳动者提出解除的理由是什么？",
+            "impact": "liability",
+            "reason": "解除理由会影响经济补偿或违法解除赔偿责任。",
         },
         {
             "factor_key": "labor.termination.service_years",
             "question": "一共工作了多久？",
+            "impact": "amount",
+            "reason": "工作年限会改变经济补偿的计算金额。",
         },
     ]
     assert result["response_contract"]["maximum_follow_up_questions"] == 2
@@ -184,7 +227,21 @@ async def test_prepare_legal_turn_interleaves_ranked_query_results() -> None:
             "intent": "legal_question",
             "legal_issue": "盗窃罪量刑",
             "authority_queries": ["盗窃数额标准", "累犯成立条件"],
-            "decision_factor_keys": ["criminal.theft.prior_conviction"],
+            "answer_targets": [
+                {
+                    "question": "入户盗窃约五万元大概会判多久？",
+                    "mode": "conditional",
+                    "kind": "estimate",
+                }
+            ],
+            "follow_up_candidates": [
+                {
+                    "factor_key": "criminal.theft.prior_conviction",
+                    "answer_target_index": 0,
+                    "impact": "legal_range",
+                    "reason": "前罪执行完毕时间可能影响是否构成累犯及从重幅度。",
+                }
+            ],
             "factor_updates": [
                 {
                     "key": "criminal.theft.prior_conviction",
@@ -230,15 +287,24 @@ async def test_prepare_legal_turn_bounds_authority_search_concurrency() -> None:
         for tool in build_lexora_tools(retrieval, None, user_message="劳动争议")
     }
 
-    result = await tools["prepare_legal_turn"].ainvoke(
+    preparation_result = await tools["prepare_legal_turn"].ainvoke(
         {
             "intent": "legal_question",
             "legal_issue": "解除劳动合同",
+            "answer_targets": [
+                {
+                    "question": "解除劳动合同后可以主张什么？",
+                    "mode": "conditional",
+                    "kind": "action",
+                }
+            ],
             "authority_queries": ["经济补偿", "违法解除", "举证责任"],
         }
     )
 
-    assert len(result["turn_preparation"]["authority_queries"]) == 4
+    assert len(preparation_result["turn_preparation"]["authority_queries"]) == 4
+    assert preparation_result["response_contract"]["jurisdiction"] == "中国大陆"
+    assert preparation_result["response_contract"]["jurisdiction_confirmation_required"] is False
     assert retrieval.maximum_active == 2
 
 
@@ -268,6 +334,20 @@ async def test_prepare_legal_turn_does_not_reask_denied_relationship_factor() ->
                 "我女朋友结婚了，但已经和她老公分居好几年，是不是算自动离婚了？"
                 "我们没以夫妻的名义同居算重婚吗？"
             ),
+            follow_up_reviewer=StaticReviewer(
+                [
+                    {
+                        "factor_key": "relationship.holds_out_as_spouses",
+                        "context_status": "explicit",
+                        "context_basis": "用户明确称双方没有以夫妻名义同居。",
+                    },
+                    {
+                        "factor_key": "relationship.second_marriage_registered",
+                        "context_status": "entailed",
+                        "context_basis": "用户将对方称为女朋友，并否认以夫妻名义共同生活。",
+                    },
+                ]
+            ),
         )
     }
 
@@ -281,9 +361,31 @@ async def test_prepare_legal_turn_does_not_reask_denied_relationship_factor() ->
                 "用户与女朋友没有以夫妻名义同居",
             ],
             "authority_queries": ["分居是否自动解除婚姻关系", "重婚罪构成要件"],
-            "decision_factor_keys": [
-                "relationship.holds_out_as_spouses",
-                "relationship.second_marriage_registered",
+            "answer_targets": [
+                {
+                    "question": "分居多年是否会自动离婚？",
+                    "mode": "direct",
+                    "kind": "rule",
+                },
+                {
+                    "question": "没有以夫妻名义同居是否构成重婚？",
+                    "mode": "conditional",
+                    "kind": "classification",
+                },
+            ],
+            "follow_up_candidates": [
+                {
+                    "factor_key": "relationship.holds_out_as_spouses",
+                    "answer_target_index": 1,
+                    "impact": "liability",
+                    "reason": "是否以夫妻身份生活会影响重婚评价。",
+                },
+                {
+                    "factor_key": "relationship.second_marriage_registered",
+                    "answer_target_index": 1,
+                    "impact": "liability",
+                    "reason": "是否再次登记结婚会影响重婚评价。",
+                },
             ],
             "factor_updates": [
                 {
@@ -307,14 +409,18 @@ async def test_prepare_legal_turn_does_not_reask_denied_relationship_factor() ->
         }
     )
 
-    assert result["case_profile"]["missing_information"] == [
-        "你们是否办理过结婚登记？"
+    assert result["case_profile"]["missing_information"] == []
+    assert result["response_contract"]["follow_up_questions"] == []
+    assert result["response_contract"]["prohibited_counterfactual_factor_keys"] == [
+        "relationship.holds_out_as_spouses"
     ]
-    assert result["response_contract"]["follow_up_questions"] == [
+    assert result["response_contract"]["answer_targets"] == [
+        {"question": "分居多年是否会自动离婚？", "mode": "direct", "kind": "rule"},
         {
-            "factor_key": "relationship.second_marriage_registered",
-            "question": "你们是否办理过结婚登记？",
-        }
+            "question": "没有以夫妻名义同居是否构成重婚？",
+            "mode": "conditional",
+            "kind": "classification",
+        },
     ]
     held_out_factor = next(
         factor
@@ -323,3 +429,137 @@ async def test_prepare_legal_turn_does_not_reask_denied_relationship_factor() ->
     )
     assert held_out_factor["state"] == "denied"
     assert held_out_factor["value"] is False
+    assert {
+        factor["key"] for factor in result["case_profile"]["factor_profile"]["factors"]
+    } == {"relationship.holds_out_as_spouses"}
+
+
+@pytest.mark.asyncio
+async def test_prepare_legal_turn_asks_only_unresolved_theft_factor() -> None:
+    memory = RecordingCaseMemory()
+    tools = {
+        tool.name: tool
+        for tool in build_lexora_tools(
+            RecordingRetrieval(),
+            memory,
+            user_message=(
+                "这次偷的东西价值大概五万元，没有退赃，没带凶器，是一个人干的，"
+                "到法庭后认罪认罚了。"
+            ),
+            follow_up_reviewer=StaticReviewer(
+                [
+                    {
+                        "factor_key": "criminal.theft.amount",
+                        "context_status": "explicit",
+                        "context_basis": "用户明确说明价值约五万元。",
+                    },
+                    {
+                        "factor_key": "criminal.theft.weapon_carried",
+                        "context_status": "explicit",
+                        "context_basis": "用户明确说明没有携带凶器。",
+                    },
+                    {
+                        "factor_key": "criminal.theft.guilty_plea",
+                        "context_status": "explicit",
+                        "context_basis": "用户明确说明已经认罪认罚。",
+                    },
+                    {
+                        "factor_key": "criminal.prior_sentence_completion",
+                        "context_status": "unresolved",
+                        "context_basis": "用户没有说明前次刑罚执行完毕时间。",
+                    },
+                ]
+            ),
+        )
+    }
+
+    result = await tools["prepare_legal_turn"].ainvoke(
+        {
+            "intent": "legal_question",
+            "legal_issue": "入户盗窃的量刑区间",
+            "answer_targets": [
+                {
+                    "question": "根据补充事实大概会判多久？",
+                    "mode": "conditional",
+                    "kind": "estimate",
+                }
+            ],
+            "key_facts": [
+                "盗窃财物价值约五万元",
+                "未退赃",
+                "未携带凶器",
+                "单独作案",
+                "已认罪认罚",
+            ],
+            "follow_up_candidates": [
+                {
+                    "factor_key": "criminal.theft.amount",
+                    "answer_target_index": 0,
+                    "impact": "legal_range",
+                    "reason": "盗窃金额会影响法定量刑档次。",
+                },
+                {
+                    "factor_key": "criminal.theft.weapon_carried",
+                    "answer_target_index": 0,
+                    "impact": "legal_range",
+                    "reason": "携带凶器可能影响行为评价。",
+                },
+                {
+                    "factor_key": "criminal.theft.guilty_plea",
+                    "answer_target_index": 0,
+                    "impact": "legal_range",
+                    "reason": "认罪认罚可能影响从宽幅度。",
+                },
+                {
+                    "factor_key": "criminal.prior_sentence_completion",
+                    "answer_target_index": 0,
+                    "impact": "legal_range",
+                    "reason": "前罪执行完毕时间可能影响是否构成累犯。",
+                },
+            ],
+            "factor_updates": [
+                {
+                    "key": "criminal.theft.amount",
+                    "label": "盗窃金额",
+                    "type": "numeric",
+                    "state": "asserted",
+                    "value": 50000,
+                    "materiality": "high",
+                },
+                {
+                    "key": "criminal.theft.weapon_carried",
+                    "label": "是否携带凶器",
+                    "type": "boolean",
+                    "state": "denied",
+                    "value": False,
+                    "materiality": "high",
+                },
+                {
+                    "key": "criminal.theft.guilty_plea",
+                    "label": "是否认罪认罚",
+                    "type": "boolean",
+                    "state": "asserted",
+                    "value": True,
+                    "materiality": "high",
+                },
+                {
+                    "key": "criminal.prior_sentence_completion",
+                    "label": "前罪刑罚执行完毕时间",
+                    "type": "text",
+                    "state": "unknown",
+                    "materiality": "high",
+                    "question": "前次刑罚何时执行完毕？",
+                },
+            ],
+        }
+    )
+
+    assert result["case_profile"]["missing_information"] == ["前次刑罚何时执行完毕？"]
+    assert result["response_contract"]["follow_up_questions"] == [
+        {
+            "factor_key": "criminal.prior_sentence_completion",
+            "question": "前次刑罚何时执行完毕？",
+            "impact": "legal_range",
+            "reason": "前罪执行完毕时间可能影响是否构成累犯。",
+        }
+    ]

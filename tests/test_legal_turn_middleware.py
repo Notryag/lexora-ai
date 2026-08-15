@@ -42,7 +42,7 @@ def test_successful_preparation_unlocks_final_model_call() -> None:
         HumanMessage(content="入户盗窃会判多久？"),
         ToolMessage(
             name=PREPARE_LEGAL_TURN_TOOL,
-            content="{}",
+            content='{"review_required":false}',
             tool_call_id="prepare-1",
         ),
     ]

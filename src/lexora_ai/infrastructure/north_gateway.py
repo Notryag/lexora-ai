@@ -28,6 +28,7 @@ from lexora_ai.application import (
 )
 from lexora_ai.config import Settings
 from lexora_ai.domain import CaseAnalysisRequest, ConversationTurnRequest
+from lexora_ai.infrastructure.follow_up_reviewer import NorthFollowUpReviewer
 from lexora_ai.infrastructure.legal_turn_middleware import (
     LegalTurnPreparationMiddleware,
 )
@@ -48,6 +49,7 @@ class NorthCaseAnalysisGateway:
         self._settings = settings
         self._checkpointer = checkpointer
         self._client: AppClient | None = None
+        self._follow_up_reviewer = NorthFollowUpReviewer(settings)
 
     async def analyze(
         self,
@@ -182,6 +184,8 @@ class NorthCaseAnalysisGateway:
                     retrieval,
                     case_memory,
                     user_message=request.message,
+                    jurisdiction=self._settings.legal_jurisdiction,
+                    follow_up_reviewer=self._follow_up_reviewer,
                 ),
                 additional_middlewares=[LegalTurnPreparationMiddleware()],
                 checkpointer=self._checkpointer,

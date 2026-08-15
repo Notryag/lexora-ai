@@ -2,7 +2,7 @@
 
 ## KI-001: Relationship-overlap answers repeat resolved or strongly implied questions
 
-Status: recorded, not fixed in the dataset-normalization slice.
+Status: resolved and live-model verified on 2026-08-15.
 
 Reproduction input:
 
@@ -25,6 +25,23 @@ Likely boundary issue:
 - the tool-level regression test verifies only that an explicitly denied factor is not re-asked; it
   does not verify the final answer or redundant unknown factors;
 - guiding-case retrieval is optional and the currently reviewed corpus may not cover this issue.
+
+Implemented mitigation:
+
+- every legal turn now declares the user's actual questions as structured answer targets;
+- follow-up candidates must state how the answer could change liability, legal range, amount, or the
+  next action, and only high-materiality unknown factors pass the application gate;
+- a separate forced review classifies every candidate as explicit, entailed, partially resolved, or
+  unresolved; necessary implications and compound questions containing a known component are
+  suppressed without being persisted as user-confirmed facts;
+- the final answer contract contains only admitted questions and forbids the model from inventing or
+  rephrasing filtered questions.
+
+The exact reproduction input was run through the deployed streaming endpoint after the change. The
+answer directly covered both questions, did not add a jurisdiction qualifier or follow-up question,
+and did not turn the denied spouse-like cohabitation factor into a contrary case fact. The committed
+profile contained only the three user-stated facts and no missing-information entry. No case-law card
+was shown because no reviewed case was retrieved.
 
 Acceptance criteria for the later conversation-quality slice:
 

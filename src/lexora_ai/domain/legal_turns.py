@@ -13,6 +13,110 @@ class LegalTurnIntent(StrEnum):
     legal_question = "legal_question"
 
 
+class LegalTurnAnswerMode(StrEnum):
+    direct = "direct"
+    conditional = "conditional"
+
+
+class LegalTurnAnswerKind(StrEnum):
+    rule = "rule"
+    classification = "classification"
+    estimate = "estimate"
+    calculation = "calculation"
+    action = "action"
+
+
+class LegalTurnFollowUpImpact(StrEnum):
+    liability = "liability"
+    legal_range = "legal_range"
+    amount = "amount"
+    next_action = "next_action"
+
+
+class LegalTurnContextStatus(StrEnum):
+    explicit = "explicit"
+    entailed = "entailed"
+    partially_resolved = "partially_resolved"
+    unresolved = "unresolved"
+
+
+class LegalTurnAnswerTarget(BaseModel):
+    question: str = Field(
+        min_length=1,
+        max_length=300,
+        description="One question the user actually asked, without adding a new issue.",
+    )
+    mode: LegalTurnAnswerMode = Field(
+        description=(
+            "Use direct when current facts support a bounded answer; use conditional when the "
+            "answer must show explicit branches. Neither mode permits withholding the answer."
+        )
+    )
+    kind: LegalTurnAnswerKind = Field(
+        description=(
+            "Classify the requested deliverable. Rule and classification targets are answered "
+            "with bounded branches and do not trigger automatic follow-up questions."
+        )
+    )
+
+    @field_validator("question")
+    @classmethod
+    def normalize_question(cls, value: str) -> str:
+        return value.strip()
+
+
+class LegalTurnFollowUpCandidate(BaseModel):
+    factor_key: str = Field(
+        min_length=3,
+        max_length=120,
+        pattern=r"^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$",
+    )
+    answer_target_index: int = Field(ge=0, le=3)
+    impact: LegalTurnFollowUpImpact
+    reason: str = Field(
+        min_length=1,
+        max_length=300,
+        description=(
+            "Explain the concrete change this answer could make to liability, legal range, "
+            "amount, or the user's next action."
+        ),
+    )
+
+    @field_validator("factor_key", "reason")
+    @classmethod
+    def normalize_candidate_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class LegalTurnFollowUpReview(BaseModel):
+    factor_key: str = Field(
+        min_length=3,
+        max_length=120,
+        pattern=r"^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$",
+    )
+    context_status: LegalTurnContextStatus = Field(
+        description=(
+            "Classify this candidate against all current user wording and case memory. Explicit, "
+            "entailed, or partially_resolved candidates are rejected; only wholly unresolved "
+            "atomic candidates may be asked."
+        )
+    )
+    context_basis: str = Field(
+        min_length=1,
+        max_length=300,
+        description=(
+            "Identify what the context establishes. Use partially_resolved when any component of "
+            "a compound factor is already known. For unresolved, explain why every component and "
+            "both material outcomes remain open after considering the question's ordinary premise."
+        ),
+    )
+
+    @field_validator("factor_key", "context_basis")
+    @classmethod
+    def normalize_review_text(cls, value: str) -> str:
+        return value.strip()
+
+
 class LegalTurnFactorUpdate(BaseModel):
     key: str = Field(
         min_length=3,
@@ -62,7 +166,11 @@ class LegalTurnPreparation(BaseModel):
     authority_queries: list[str] = Field(default_factory=list, max_length=3)
     material_query: str | None = Field(default=None, max_length=300)
     case_law_query: str | None = Field(default=None, max_length=300)
-    decision_factor_keys: list[str] = Field(default_factory=list, max_length=2)
+    answer_targets: list[LegalTurnAnswerTarget] = Field(default_factory=list, max_length=4)
+    follow_up_candidates: list[LegalTurnFollowUpCandidate] = Field(
+        default_factory=list,
+        max_length=4,
+    )
     factor_updates: list[LegalTurnFactorUpdate] = Field(default_factory=list, max_length=12)
 
     @field_validator(
@@ -85,7 +193,6 @@ class LegalTurnPreparation(BaseModel):
         "disputed_issues",
         "evidence_notes",
         "authority_queries",
-        "decision_factor_keys",
     )
     @classmethod
     def normalize_items(cls, value: list[str]) -> list[str]:
@@ -100,13 +207,28 @@ class LegalTurnPreparation(BaseModel):
     def validate_intent_payload(self) -> LegalTurnPreparation:
         if self.intent == LegalTurnIntent.legal_question and not self.legal_issue:
             raise ValueError("legal_question requires legal_issue")
+        if self.intent == LegalTurnIntent.legal_question and not self.answer_targets:
+            raise ValueError("legal_question requires at least one answer target")
+        if self.intent != LegalTurnIntent.legal_question and any(
+            (self.answer_targets, self.follow_up_candidates)
+        ):
+            raise ValueError("only legal_question turns can define answer or follow-up targets")
+        candidate_keys = [candidate.factor_key for candidate in self.follow_up_candidates]
+        if len(candidate_keys) != len(set(candidate_keys)):
+            raise ValueError("follow-up candidate factor keys must be unique")
+        if any(
+            candidate.answer_target_index >= len(self.answer_targets)
+            for candidate in self.follow_up_candidates
+        ):
+            raise ValueError("follow-up candidate references an unknown answer target")
         if self.intent == LegalTurnIntent.social and any(
             (
                 self.legal_issue,
                 self.authority_queries,
                 self.material_query,
                 self.case_law_query,
-                self.decision_factor_keys,
+                self.answer_targets,
+                self.follow_up_candidates,
                 self.factor_updates,
             )
         ):

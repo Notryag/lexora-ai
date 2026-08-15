@@ -37,7 +37,13 @@ class LegalTurnPreparationMiddleware(AgentMiddleware):
     @staticmethod
     def _prepare_request(request: ModelRequest) -> ModelRequest:
         if _turn_is_prepared(request.messages):
-            return request
+            return request.override(
+                tools=[
+                    tool
+                    for tool in request.tools
+                    if getattr(tool, "name", None) != PREPARE_LEGAL_TURN_TOOL
+                ]
+            )
         preparation_tools = [
             tool for tool in request.tools if getattr(tool, "name", None) == PREPARE_LEGAL_TURN_TOOL
         ]

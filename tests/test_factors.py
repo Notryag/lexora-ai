@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lexora_ai.domain import CaseFactorProfile, LegalTurnFactorUpdate
+from lexora_ai.domain import CaseFactorProfile, FactorState, LegalTurnFactorUpdate
 
 
 def test_factor_profile_accepts_ai_discovered_factor() -> None:
@@ -22,6 +22,28 @@ def test_factor_profile_accepts_ai_discovered_factor() -> None:
     assert profile.factors[0].key == "relationship.holds_out_as_spouses"
     assert profile.factors[0].state == "denied"
     assert profile.factors[0].value is False
+
+
+def test_boolean_factor_state_is_normalized_from_explicit_value() -> None:
+    denied = LegalTurnFactorUpdate(
+        key="relationship.holds_out_as_spouses",
+        label="是否以夫妻身份生活",
+        type="boolean",
+        state="asserted",
+        value=False,
+        materiality="high",
+    )
+    conflicting = LegalTurnFactorUpdate(
+        key="relationship.holds_out_as_spouses",
+        label="是否以夫妻身份生活",
+        type="boolean",
+        state="denied",
+        value=True,
+        materiality="high",
+    )
+
+    assert denied.state == FactorState.denied
+    assert conflicting.state == FactorState.conflicting
 
 
 def test_factor_profile_reuses_existing_key_without_duplicate() -> None:

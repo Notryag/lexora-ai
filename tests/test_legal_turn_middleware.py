@@ -55,9 +55,9 @@ def test_successful_preparation_unlocks_final_model_call() -> None:
     )
 
     assert _turn_is_prepared(messages)
-    assert captured[0] is request
+    assert captured[0] is not request
     assert captured[0].tool_choice is None
-    assert len(captured[0].tools) == 2
+    assert [tool.name for tool in captured[0].tools] == ["search_legal_authorities"]
 
 
 def test_old_or_failed_preparation_does_not_unlock_current_turn() -> None:

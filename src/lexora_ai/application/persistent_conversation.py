@@ -50,7 +50,8 @@ from lexora_ai.material_context import MaterialContextChunk, rank_material_conte
 logger = logging.getLogger(__name__)
 
 AUTHORITY_REFERENCE_PATTERN = re.compile(
-    r"\[((?:L[A-Za-z0-9-]+:C\d+|C[A-Za-z0-9-]+:S\d+))\]"
+    r"\[(?P<square>(?:L[A-Za-z0-9-]+:C\d+|C[A-Za-z0-9-]+:S\d+))\]"
+    r"|【(?P<fullwidth>(?:L[A-Za-z0-9-]+:C\d+|C[A-Za-z0-9-]+:S\d+))】"
 )
 _MAX_PENDING_AUTHORITY_REFERENCE_CHARS = 160
 CitationChunk = TypeVar("CitationChunk")
@@ -67,30 +68,39 @@ class _AuthorityReferenceDeltaFilter:
         self._pending += delta
         emitted: list[str] = []
         while self._pending:
-            opening = self._pending.find("[")
-            if opening < 0:
+            openings = [
+                position
+                for marker in ("[", "【")
+                if (position := self._pending.find(marker)) >= 0
+            ]
+            if not openings:
                 emitted.append(self._pending)
                 self._pending = ""
                 break
+            opening = min(openings)
             if opening:
                 emitted.append(self._pending[:opening])
                 self._pending = self._pending[opening:]
             if len(self._pending) == 1:
                 break
             if self._pending[1] not in {"L", "C"}:
-                emitted.append("[")
+                emitted.append(self._pending[0])
                 self._pending = self._pending[1:]
                 continue
-            closing = self._pending.find("]", 2)
+            closing_marker = "]" if self._pending[0] == "[" else "】"
+            closing = self._pending.find(closing_marker, 2)
             if closing < 0:
                 if len(self._pending) > _MAX_PENDING_AUTHORITY_REFERENCE_CHARS:
-                    emitted.append("[")
+                    emitted.append(self._pending[0])
                     self._pending = self._pending[1:]
                     continue
                 break
             candidate = self._pending[: closing + 1]
             match = AUTHORITY_REFERENCE_PATTERN.fullmatch(candidate)
-            if match is None or match.group(1) in self._available_references():
+            reference = _authority_reference(match) if match is not None else None
+            if reference in self._available_references():
+                emitted.append(f"[{reference}]")
+            elif match is None:
                 emitted.append(candidate)
             self._pending = self._pending[closing + 1 :]
         return "".join(emitted)
@@ -625,7 +635,8 @@ def _cited_chunks(
 ) -> list[CitationChunk]:
     cited: list[CitationChunk] = []
     seen: set[str] = set()
-    for reference in AUTHORITY_REFERENCE_PATTERN.findall(content):
+    for match in AUTHORITY_REFERENCE_PATTERN.finditer(content):
+        reference = _authority_reference(match)
         if reference in seen or reference not in available:
             continue
         seen.add(reference)
@@ -637,6 +648,14 @@ def _strip_unavailable_authority_references(
     content: str, available_references: set[str]
 ) -> str:
     return AUTHORITY_REFERENCE_PATTERN.sub(
-        lambda match: match.group(0) if match.group(1) in available_references else "",
+        lambda match: (
+            f"[{_authority_reference(match)}]"
+            if _authority_reference(match) in available_references
+            else ""
+        ),
         content,
     )
+
+
+def _authority_reference(match: re.Match[str]) -> str:
+    return match.group("square") or match.group("fullwidth")

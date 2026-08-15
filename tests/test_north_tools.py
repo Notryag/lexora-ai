@@ -9,7 +9,9 @@ from lexora_ai.domain import (
     CaseProfile,
     LegalTurnAnswerTarget,
     LegalTurnFactorGroundingReview,
+    LegalTurnFactorUpdate,
     LegalTurnFollowUpReview,
+    LegalTurnPreparation,
 )
 from lexora_ai.infrastructure.north_tools import build_lexora_tools
 
@@ -93,6 +95,25 @@ class StaticFactorReviewer:
         return self.reviews
 
 
+def test_factor_generation_rules_live_in_the_input_schema() -> None:
+    factor_fields = LegalTurnFactorUpdate.model_fields
+    preparation_fields = LegalTurnPreparation.model_fields
+
+    assert "Reuse the exact existing case_profile key" in (
+        factor_fields["key"].description or ""
+    )
+    assert "explicitly negated fact" in (
+        factor_fields["state"].description or ""
+    )
+    assert "approximate wording" in (factor_fields["value"].description or "")
+    assert "Never include legal rules" in (
+        preparation_fields["factor_updates"].description or ""
+    )
+    assert "Application review decides" in (
+        preparation_fields["follow_up_candidates"].description or ""
+    )
+
+
 @pytest.mark.asyncio
 async def test_agent_retrieval_tools_keep_sources_separate() -> None:
     retrieval = RecordingRetrieval()
@@ -107,6 +128,7 @@ async def test_agent_retrieval_tools_keep_sources_separate() -> None:
         "search_legal_authorities",
         "search_guiding_cases",
     }
+    assert len(tools["prepare_legal_turn"].description.split()) <= 100
 
     result = await tools["search_legal_authorities"].ainvoke({"query": "解除劳动合同的补偿规则"})
 

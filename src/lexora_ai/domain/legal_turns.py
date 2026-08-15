@@ -77,9 +77,16 @@ class LegalTurnFollowUpCandidate(BaseModel):
         min_length=3,
         max_length=120,
         pattern=r"^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$",
+        description="Exact key of one unknown factor proposed in factor_updates.",
     )
-    answer_target_index: int = Field(ge=0, le=3)
-    impact: LegalTurnFollowUpImpact
+    answer_target_index: int = Field(
+        ge=0,
+        le=3,
+        description="Zero-based index of the answer target whose outcome this fact can change.",
+    )
+    impact: LegalTurnFollowUpImpact = Field(
+        description="The concrete result dimension that could change if this fact were known.",
+    )
     reason: str = Field(
         min_length=1,
         max_length=300,
@@ -130,25 +137,41 @@ class LegalTurnFactorUpdate(BaseModel):
         max_length=120,
         pattern=r"^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$",
         description=(
-            "AI-discovered stable semantic key. Reuse an existing case factor key whenever the "
-            "same fact dimension already exists."
+            "Stable semantic key for one factual dimension. Reuse the exact existing case_profile "
+            "key for the same dimension."
         ),
     )
-    label: str = Field(min_length=1, max_length=120)
-    type: FactorType
-    state: FactorState
+    label: str = Field(
+        min_length=1,
+        max_length=120,
+        description="Neutral label for exactly one fact; do not combine wider conditions.",
+    )
+    type: FactorType = Field(description="Value type of this single factual dimension.")
+    state: FactorState = Field(
+        description=(
+            "Use asserted for an explicitly affirmed fact, denied for an explicitly negated fact, "
+            "unknown only when the fact materially affects the current answer, and conflicting "
+            "only when the current statement contradicts stored case facts."
+        )
+    )
     value: bool | int | float | str | None = Field(
         default=None,
         description=(
-            "Canonical user-stated value. Preserve uncertainty and qualifiers: for an approximate "
-            "number use the user's bounded wording such as '约5万元', not an exact 50000."
+            "Only the fact explicitly stated by the user. Preserve qualifiers, negation scope, "
+            "and approximate wording; use a string such as '约5万元' instead of false precision."
         ),
     )
-    materiality: FactorMateriality = FactorMateriality.medium
+    materiality: FactorMateriality = Field(
+        default=FactorMateriality.medium,
+        description="How strongly this fact can change a current answer target.",
+    )
     question: str | None = Field(
         default=None,
         max_length=300,
-        description="Neutral factual question used only when this factor is unknown and material.",
+        description=(
+            "Neutral question about this fact alone. Required only for an unknown material factor; "
+            "do not ask for asserted, denied, or conflicting facts."
+        ),
     )
 
     @field_validator("key", "label", "question", mode="before")
@@ -164,6 +187,11 @@ class LegalTurnFactorUpdate(BaseModel):
             self.value = None
             if not self.question:
                 raise ValueError("unknown factors require a follow-up question")
+        elif self.type == FactorType.boolean and isinstance(self.value, bool):
+            if self.value is False and self.state == FactorState.asserted:
+                self.state = FactorState.denied
+            elif self.value is True and self.state == FactorState.denied:
+                self.state = FactorState.conflicting
         return self
 
 
@@ -187,10 +215,27 @@ class LegalTurnFactorGroundingReview(BaseModel):
 
 
 class LegalTurnPreparation(BaseModel):
-    intent: LegalTurnIntent
-    legal_issue: str | None = Field(default=None, max_length=300)
-    case_type: str | None = Field(default=None, max_length=200)
-    parties: list[str] = Field(default_factory=list, max_length=10)
+    intent: LegalTurnIntent = Field(
+        description=(
+            "Classify as social, factual case_update, or legal_question. A factual supplement "
+            "without a new question is case_update; the application may resume saved targets."
+        )
+    )
+    legal_issue: str | None = Field(
+        default=None,
+        max_length=300,
+        description="Single legal issue being answered; required for legal_question only.",
+    )
+    case_type: str | None = Field(
+        default=None,
+        max_length=200,
+        description="Concise matter type supported by the user's wording; omit when unclear.",
+    )
+    parties: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Parties and roles explicitly identified by the user.",
+    )
     claims: list[str] = Field(
         default_factory=list,
         max_length=10,
@@ -207,17 +252,54 @@ class LegalTurnPreparation(BaseModel):
             "Preserve uncertainty, negation scope, and qualifiers."
         ),
     )
-    disputed_issues: list[str] = Field(default_factory=list, max_length=8)
-    evidence_notes: list[str] = Field(default_factory=list, max_length=8)
-    authority_queries: list[str] = Field(default_factory=list, max_length=3)
-    material_query: str | None = Field(default=None, max_length=300)
-    case_law_query: str | None = Field(default=None, max_length=300)
-    answer_targets: list[LegalTurnAnswerTarget] = Field(default_factory=list, max_length=4)
+    disputed_issues: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Disputes expressly raised by the user; do not invent inferred disputes.",
+    )
+    evidence_notes: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Evidence the user says exists or can be obtained; never infer evidence.",
+    )
+    authority_queries: list[str] = Field(
+        default_factory=list,
+        max_length=3,
+        description=(
+            "Up to three focused searches for governing rules and outcome-changing dimensions."
+        ),
+    )
+    material_query: str | None = Field(
+        default=None,
+        max_length=300,
+        description="Search submitted case materials only when their contents can affect the answer.",
+    )
+    case_law_query: str | None = Field(
+        default=None,
+        max_length=300,
+        description="Search reviewed cases only when a factual comparison materially helps.",
+    )
+    answer_targets: list[LegalTurnAnswerTarget] = Field(
+        default_factory=list,
+        max_length=4,
+        description="Every question the user asks this turn, without adding issues.",
+    )
     follow_up_candidates: list[LegalTurnFollowUpCandidate] = Field(
         default_factory=list,
         max_length=4,
+        description=(
+            "Only unresolved atomic factors that can change liability, legal range, amount, or "
+            "next action. Application review decides whether any question is admitted."
+        ),
     )
-    factor_updates: list[LegalTurnFactorUpdate] = Field(default_factory=list, max_length=12)
+    factor_updates: list[LegalTurnFactorUpdate] = Field(
+        default_factory=list,
+        max_length=12,
+        description=(
+            "Small set of current-turn case facts. Never include legal rules, offenses, liability, "
+            "predictions, or generic warnings."
+        ),
+    )
 
     @field_validator(
         "legal_issue",

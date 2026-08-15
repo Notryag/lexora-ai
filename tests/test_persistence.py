@@ -49,7 +49,7 @@ from lexora_ai.infrastructure.material_parser import MaterialParseError, parse_m
 
 
 def test_unavailable_authority_references_are_removed_from_model_output() -> None:
-    content = "规则一[Lknown:C1]，错误引用[Lunknown:C9]，材料引用[M1:C1]。"
+    content = "规则一【Lknown:C1】，错误引用[Lunknown:C9]，材料引用[M1:C1]。"
 
     assert _strip_unavailable_authority_references(content, {"Lknown:C1"}) == (
         "规则一[Lknown:C1]，错误引用，材料引用[M1:C1]。"
@@ -63,13 +63,21 @@ def test_authority_reference_delta_filter_handles_split_markers() -> None:
     streamed = "".join(
         reference_filter.feed(delta)
         for delta in (
-            "规则[Lk",
-            "nown:C1]，错误[Lu",
+            "规则【Lk",
+            "nown:C1】，错误[Lu",
             "nknown:C9]，普通[Link](https://example.test)。",
         )
     ) + reference_filter.flush()
 
     assert streamed == "规则[Lknown:C1]，错误，普通[Link](https://example.test)。"
+
+
+def test_authority_reference_delta_filter_preserves_ordinary_fullwidth_text() -> None:
+    reference_filter = _AuthorityReferenceDeltaFilter(lambda: {"Lknown:C1"})
+
+    streamed = reference_filter.feed("提示【另见说明】规则") + reference_filter.flush()
+
+    assert streamed == "提示【另见说明】规则"
 
 
 def test_authority_reference_delta_filter_flushes_incomplete_text() -> None:

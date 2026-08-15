@@ -343,6 +343,22 @@ legal turn. When a later turn is classified as a factual `case_update`, the prep
 those targets and retrieves authorities again before answering. This prevents a multi-turn supplement
 from becoming a write-only acknowledgement while keeping the decision generic for any matter type.
 
+Preparation instructions follow the layer that enforces or consumes them. The system prompt owns
+stable answer behavior, the preparation tool description states purpose and call timing, Pydantic
+field descriptions own extraction rules, and application code owns review limits, target resumption,
+and retrieval orchestration. Before this split, the preparation description contained 319 words and
+the approximate fixed post-preparation context was 3,086 tokens. The compressed description contains
+80 words, and removing the already-completed preparation tool from later model calls reduces that
+estimate to 997 tokens. These are offline approximations; provider-reported input and cached-input
+usage remains the authority for production cost and cache decisions.
+
+The tool surface is phase-stable: the first model call sees only `prepare_legal_turn`; after its
+successful ToolMessage, middleware removes it and exposes only retrieval and calculation tools.
+This prevents repeated preparation and avoids resending its large schema after the structured state
+already exists. Changing the prompt or tool schema can cause a one-time cache-prefix miss after
+deployment, but it does not invalidate the new stable prefix on every turn; provider cache and usage
+metrics remain the final production check.
+
 Stream failures carry a stable, non-sensitive product error code. Provider connection failures,
 timeouts, rate limits, and 5xx responses become `provider_unavailable`; they remain failed Runs but
 are not reported as answer-quality failures. Unknown exceptions remain `internal_error`. The API

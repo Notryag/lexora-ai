@@ -13,6 +13,7 @@ from lexora_ai.domain import (
     CaseProfilePatch,
     ConversationTurnRequest,
     LegalKnowledgeChunk,
+    LegalTurnFactorGroundingReview,
     LegalTurnFollowUpReview,
     LegalTurnPreparation,
 )
@@ -96,6 +97,16 @@ class FollowUpReviewerPort(Protocol):
         preparation: LegalTurnPreparation,
         factor_profile: CaseFactorProfile,
     ) -> list[LegalTurnFollowUpReview]: ...
+
+
+class FactorUpdateReviewerPort(Protocol):
+    async def review_factor_updates(
+        self,
+        *,
+        user_message: str,
+        preparation: LegalTurnPreparation,
+        factor_profile: CaseFactorProfile,
+    ) -> list[LegalTurnFactorGroundingReview]: ...
 
 
 class CaseAnalysisGateway(Protocol):

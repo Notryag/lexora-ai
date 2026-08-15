@@ -39,6 +39,7 @@ rag-core = { path = "packages/rag-core", editable = true }
 [project.scripts]
 lexora-api = "lexora_ai.main:run"
 lexora-case-law = "lexora_ai.case_law_cli:run"
+lexora-conversation-eval = "lexora_ai.conversation_evaluation_cli:run"
 lexora-evaluate-legal-retrieval = "lexora_ai.evaluation.legal_retrieval:run"
 lexora-evaluate-case-law-retrieval = "lexora_ai.evaluation.case_law_retrieval:run"
 lexora-factor-discovery = "lexora_ai.factor_discovery_cli:run"

@@ -87,6 +87,11 @@ The main alternatives are explicitly deferred:
 Both may appear later as specialized slices, but they are not the base architecture for the current
 personal legal-analysis product.
 
+Answer composition is also target-aware. Rule and classification questions default to a direct
+conclusion, essential authority, and at most one material boundary. Factor inventories belong to
+estimates, calculations, action planning, or an explicitly requested full analysis; they are not a
+mandatory footer for every legal answer.
+
 ## Reference Systems And Borrowed Patterns
 
 Lexora should not copy any one external system wholesale. The useful path is to borrow concrete
@@ -245,6 +250,8 @@ CaseFactorProfile is not an AI-only analysis artifact. It should be treated as p
 state with AI-assisted proposals:
 
 - the model may propose factor updates from the current turn;
+- a separate context-grounding review checks every proposed known factor against the user's exact
+  wording before it may enter case state;
 - application code merges, deduplicates, and marks state transitions;
 - only successful runs commit updates;
 - legal conclusions, probability estimates, and retrieved authorities do not become factors;
@@ -252,6 +259,13 @@ state with AI-assisted proposals:
 
 In other words, AI helps extract and normalize the case state, but the profile itself is a bounded
 domain object, not a free-form model summary.
+
+The grounding review preserves semantic scope rather than matching legal keywords. In particular,
+a negation qualified by manner, purpose, time, object, or extent cannot be widened into an
+unqualified denial. Only `grounded` asserted/denied/conflicting updates are merged. `unsupported`,
+`overbroad`, and `conflicting` proposals stay out of the profile and answer constraints. Reviewer
+errors fail closed for proposed known facts; unknown factors still pass through the independent
+sufficiency and follow-up gates.
 
 ## Conversation Experience Contract
 
@@ -311,6 +325,15 @@ assistant text; the final `values` event completes the Run without replaying tha
 message is persisted once at submission and the assistant message once at successful completion.
 The browser does not poll the Run or refetch messages while text is streaming; it refreshes durable
 state once after completion.
+
+The bounded core-conversation evaluation exercises this entire HTTP path with versioned product
+scenarios. It verifies that streamed text equals the final persisted answer, every user turn creates
+one Run with exactly one human and one assistant message, references survive as citation
+presentations, and the case profile remains inspectable. Scenario-specific assertions are evaluation
+fixtures only; they must never become keyword branches in production dialogue logic. Live execution
+requires an explicit flag, creates isolated cases, and deletes only the returned case IDs. Internal
+Agent model-call and token totals remain unavailable until North and the product Run/event contract
+expose trustworthy usage events; reports record that gap rather than estimating usage.
 
 Retrieved authorities are candidates, not citations. Lexora persists and returns only references
 that the final answer actually cites, in first-use order. Durable messages retain stable internal

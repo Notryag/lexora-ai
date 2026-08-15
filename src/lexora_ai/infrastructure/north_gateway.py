@@ -186,6 +186,7 @@ class NorthCaseAnalysisGateway:
                     user_message=request.message,
                     jurisdiction=self._settings.legal_jurisdiction,
                     follow_up_reviewer=self._follow_up_reviewer,
+                    factor_update_reviewer=self._follow_up_reviewer,
                 ),
                 additional_middlewares=[LegalTurnPreparationMiddleware()],
                 checkpointer=self._checkpointer,

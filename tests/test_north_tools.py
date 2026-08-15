@@ -5,7 +5,11 @@ import asyncio
 import pytest
 
 from lexora_ai.application import ConversationLegalChunk
-from lexora_ai.domain import CaseProfile, LegalTurnFollowUpReview
+from lexora_ai.domain import (
+    CaseProfile,
+    LegalTurnFactorGroundingReview,
+    LegalTurnFollowUpReview,
+)
 from lexora_ai.infrastructure.north_tools import build_lexora_tools
 
 
@@ -73,6 +77,16 @@ class StaticReviewer:
         self.reviews = [LegalTurnFollowUpReview.model_validate(review) for review in reviews]
 
     async def review(self, **_kwargs):
+        return self.reviews
+
+
+class StaticFactorReviewer:
+    def __init__(self, reviews: list[dict[str, object]]) -> None:
+        self.reviews = [
+            LegalTurnFactorGroundingReview.model_validate(review) for review in reviews
+        ]
+
+    async def review_factor_updates(self, **_kwargs):
         return self.reviews
 
 
@@ -432,6 +446,76 @@ async def test_prepare_legal_turn_does_not_reask_denied_relationship_factor() ->
     assert {
         factor["key"] for factor in result["case_profile"]["factor_profile"]["factors"]
     } == {"relationship.holds_out_as_spouses"}
+
+
+@pytest.mark.asyncio
+async def test_prepare_legal_turn_drops_an_overbroad_claimed_factor() -> None:
+    memory = RecordingCaseMemory()
+    tools = {
+        tool.name: tool
+        for tool in build_lexora_tools(
+            RecordingRetrieval(),
+            memory,
+            user_message="我们没有以夫妻名义同居。",
+            factor_update_reviewer=StaticFactorReviewer(
+                [
+                    {
+                        "factor_key": "relationship.holds_out_as_spouses",
+                        "status": "grounded",
+                        "context_basis": "用户原话直接否定以夫妻身份生活。",
+                    },
+                    {
+                        "factor_key": "cohabitation.present",
+                        "status": "overbroad",
+                        "context_basis": "原话没有否定共同居住本身。",
+                    },
+                ]
+            ),
+        )
+    }
+
+    result = await tools["prepare_legal_turn"].ainvoke(
+        {
+            "intent": "legal_question",
+            "legal_issue": "是否构成重婚",
+            "answer_targets": [
+                {
+                    "question": "没有以夫妻名义同居是否构成重婚？",
+                    "mode": "direct",
+                    "kind": "classification",
+                }
+            ],
+            "key_facts": ["用户称双方没有以夫妻名义同居"],
+            "factor_updates": [
+                {
+                    "key": "relationship.holds_out_as_spouses",
+                    "label": "是否以夫妻身份生活",
+                    "type": "boolean",
+                    "state": "denied",
+                    "value": False,
+                    "materiality": "high",
+                },
+                {
+                    "key": "cohabitation.present",
+                    "label": "是否共同生活",
+                    "type": "boolean",
+                    "state": "denied",
+                    "value": False,
+                    "materiality": "high",
+                },
+            ],
+        }
+    )
+
+    assert [
+        factor["key"] for factor in result["case_profile"]["factor_profile"]["factors"]
+    ] == ["relationship.holds_out_as_spouses"]
+    assert [
+        factor["key"] for factor in result["turn_preparation"]["factor_updates"]
+    ] == ["relationship.holds_out_as_spouses"]
+    assert result["turn_preparation"]["factor_grounding_review"][1]["status"] == (
+        "overbroad"
+    )
 
 
 @pytest.mark.asyncio

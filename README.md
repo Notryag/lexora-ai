@@ -31,6 +31,8 @@ Lexora 通过连续对话理解用户描述的情况，并将案件背景、当�
 - 对 CAIL2022-LCR、LeCaRDv2 和 STARD 执行有界规范化与来源 ID、案号、内容哈希去重 dry-run；
 - 将三套研究数据的 query、相关性标签和候选 ID 规范化为可审计的检索评测计划；
 - 流式核验 STARD 候选法规覆盖，并为获批后的离线磁盘 BM25 评测提供硬资源门禁；
+- 以默认 dry-run、显式限量执行的核心对话评测检查流式文本、引用、案件画像和
+  Thread/Run/Event 持久化一致性；
 - 明确输出争议焦点、双方论证、证据评价、信息缺口和后续核查事项；
 - 对材料数量、单份大小和总上下文设置确定性限制；
 - 提供可替换的分析网关，测试不依赖真实模型。
@@ -45,7 +47,8 @@ Lexora 通过连续对话理解用户描述的情况，并将案件背景、当�
 
 法规同步与版本审核见[法规来源同步](./docs/legal-sources.md)，指导性案例见
 [类案来源与审核](./docs/case-law-sources.md)，factor 数据与费用边界见
-[Factor Discovery Data](./docs/factor-discovery-data.md)。本机生产启动方式见
+[Factor Discovery Data](./docs/factor-discovery-data.md)，核心对话回归方式见
+[Core Conversation Evaluation](./docs/conversation-evaluation.md)。本机生产启动方式见
 [部署说明](./docs/deployment.md)。
 
 ## Web 工作台

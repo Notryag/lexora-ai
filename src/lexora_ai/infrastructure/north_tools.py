@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from lexora_ai.application import (
     ConversationCaseMemoryPort,
     ConversationRetrievalPort,
+    FactorUpdateReviewerPort,
     FollowUpReviewerPort,
 )
 from lexora_ai.domain import (
@@ -18,6 +19,8 @@ from lexora_ai.domain import (
     LegalTurnAnswerKind,
     LegalTurnAnswerTarget,
     LegalTurnContextStatus,
+    LegalTurnFactorGroundingReview,
+    LegalTurnFactorGroundingStatus,
     LegalTurnFactorUpdate,
     LegalTurnFollowUpCandidate,
     LegalTurnFollowUpReview,
@@ -172,6 +175,7 @@ def build_lexora_tools(
     user_message: str = "",
     jurisdiction: str = "中国大陆",
     follow_up_reviewer: FollowUpReviewerPort | None = None,
+    factor_update_reviewer: FactorUpdateReviewerPort | None = None,
 ) -> list[StructuredTool]:
     tools: list[StructuredTool] = []
 
@@ -248,17 +252,36 @@ def build_lexora_tools(
         )
 
         profile: CaseProfile | None = None
+        factor_grounding_reviews: list[LegalTurnFactorGroundingReview] = []
+        accepted_factor_updates = list(preparation.factor_updates)
         factor_profile_for_turn = CaseFactorProfile()
         if case_memory is not None and preparation.intent != LegalTurnIntent.social:
             current_profile = await case_memory.get_profile()
+            if factor_update_reviewer is not None:
+                factor_grounding_reviews = await factor_update_reviewer.review_factor_updates(
+                    user_message=user_message,
+                    preparation=preparation,
+                    factor_profile=current_profile.factor_profile,
+                )
+                accepted_factor_keys = {
+                    review.factor_key
+                    for review in factor_grounding_reviews
+                    if review.status == LegalTurnFactorGroundingStatus.grounded
+                }
+                accepted_factor_updates = [
+                    update
+                    for update in preparation.factor_updates
+                    if update.state == FactorState.unknown
+                    or update.key in accepted_factor_keys
+                ]
             factor_profile_for_turn = _apply_factor_updates(
                 current_profile.factor_profile,
-                preparation.factor_updates,
+                accepted_factor_updates,
             )
         elif preparation.intent != LegalTurnIntent.social:
             factor_profile_for_turn = _apply_factor_updates(
                 CaseFactorProfile(),
-                preparation.factor_updates,
+                accepted_factor_updates,
             )
 
         reviews: list[LegalTurnFollowUpReview] = []
@@ -349,7 +372,11 @@ def build_lexora_tools(
                 ],
                 "factor_updates": [
                     factor_update.model_dump(mode="json")
-                    for factor_update in preparation.factor_updates
+                    for factor_update in accepted_factor_updates
+                ],
+                "factor_grounding_review": [
+                    review.model_dump(mode="json")
+                    for review in factor_grounding_reviews
                 ],
                 "authority_queries": executed_queries,
                 "authority_query_coverage": [
@@ -391,7 +418,9 @@ def build_lexora_tools(
                 "types, materiality, and canonical questions; reuse the exact key already present "
                 "in case_profile whenever the dimension exists. A factor is a case fact, never a "
                 "legal conclusion, prediction, statute, or generic warning. Use asserted or denied "
-                "only for facts explicit in the current user turn; use unknown only for facts that "
+                "only for facts explicit in the current user turn. Preserve every qualifier and "
+                "the exact scope of a negation; a qualified denial cannot become a broader denial. "
+                "Use unknown only for facts that "
                 "would materially change the current answer. Restate every question the user "
                 "actually asked in answer_targets and choose direct or conditional response mode. "
                 "Classify each target as rule, classification, estimate, calculation, or action. "

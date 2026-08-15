@@ -40,6 +40,13 @@ class LegalTurnContextStatus(StrEnum):
     unresolved = "unresolved"
 
 
+class LegalTurnFactorGroundingStatus(StrEnum):
+    grounded = "grounded"
+    unsupported = "unsupported"
+    overbroad = "overbroad"
+    conflicting = "conflicting"
+
+
 class LegalTurnAnswerTarget(BaseModel):
     question: str = Field(
         min_length=1,
@@ -154,6 +161,25 @@ class LegalTurnFactorUpdate(BaseModel):
         return self
 
 
+class LegalTurnFactorGroundingReview(BaseModel):
+    factor_key: str = Field(
+        min_length=3,
+        max_length=120,
+        pattern=r"^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$",
+    )
+    status: LegalTurnFactorGroundingStatus
+    context_basis: str = Field(
+        min_length=1,
+        max_length=300,
+        description="Explain whether the exact factor state and scope follow from user wording.",
+    )
+
+    @field_validator("factor_key", "context_basis")
+    @classmethod
+    def normalize_grounding_text(cls, value: str) -> str:
+        return value.strip()
+
+
 class LegalTurnPreparation(BaseModel):
     intent: LegalTurnIntent
     legal_issue: str | None = Field(default=None, max_length=300)
@@ -216,6 +242,9 @@ class LegalTurnPreparation(BaseModel):
         candidate_keys = [candidate.factor_key for candidate in self.follow_up_candidates]
         if len(candidate_keys) != len(set(candidate_keys)):
             raise ValueError("follow-up candidate factor keys must be unique")
+        factor_keys = [factor.key for factor in self.factor_updates]
+        if len(factor_keys) != len(set(factor_keys)):
+            raise ValueError("factor update keys must be unique")
         if any(
             candidate.answer_target_index >= len(self.answer_targets)
             for candidate in self.follow_up_candidates

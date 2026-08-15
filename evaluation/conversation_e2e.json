@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "social_greeting",
+      "title": "社交问候",
+      "turns": [
+        {
+          "message": "hi",
+          "expect": {
+            "max_answer_chars": 120,
+            "max_questions": 0,
+            "max_legal_citations": 0,
+            "max_case_law_citations": 0,
+            "min_delta_events": 1
+          },
+          "review": [
+            "回答应当只是简短问候，不主动展开法律知识或案件分析。"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "employment_termination",
+      "title": "公司解除劳动合同",
+      "turns": [
+        {
+          "message": "我被公司辞退了，想知道能拿经济补偿还是赔偿金。我在公司工作3年2个月，解除前12个月平均工资是10000元，公司只口头说我不适合，没有给书面理由。",
+          "expect": {
+            "required_term_groups": [
+              ["经济补偿", "补偿金"],
+              ["赔偿金", "违法解除", "2N"]
+            ],
+            "min_legal_citations": 1,
+            "max_questions": 1,
+            "min_delta_events": 2
+          },
+          "review": [
+            "先说明合法解除与违法解除分别对应 N 和 2N，而不是只说信息不足。",
+            "应利用已经给出的工龄和月工资做条件式计算，不重复询问。"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "theft_sentencing",
+      "title": "盗窃量刑连续咨询",
+      "turns": [
+        {
+          "message": "我朋友之前因为盗窃被判过刑，这次他撬门进了别人家里偷东西，被抓的时候没反抗。这种情况大概会判多久？",
+          "expect": {
+            "required_term_groups": [["盗窃"]],
+            "min_legal_citations": 1,
+            "max_questions": 3,
+            "min_delta_events": 2
+          },
+          "review": [
+            "第一轮可以追问会显著改变量刑区间的事实，但应先给出可用的一般判断。"
+          ]
+        },
+        {
+          "message": "补充一下：这次偷的东西价值大概5万元，事后没有退赃，作案时没带凶器，是他一个人干的，到了法庭上认罪认罚了。",
+          "expect": {
+            "required_term_groups": [
+              ["盗窃"],
+              ["年", "个月", "刑期"]
+            ],
+            "forbidden_terms": [
+              "盗窃财物价值是多少",
+              "是否已经退赃",
+              "是否携带凶器",
+              "是否认罪认罚"
+            ],
+            "min_legal_citations": 1,
+            "max_questions": 1,
+            "min_delta_events": 2
+          },
+          "review": [
+            "第二轮应给出有依据的区间分析，不再追问用户已经补充的金额、退赃、凶器和认罪认罚。",
+            "前科是否构成累犯仍不明确时，应将其作为分支条件而不是阻塞回答。"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "divorce_property",
+      "title": "离婚房产分割",
+      "turns": [
+        {
+          "message": "离婚怎么分配财产呢？有一套房子，是婚后买的，登记在双方名下，双方共同还贷，目前还有60万元贷款。",
+          "expect": {
+            "required_term_groups": [
+              ["共同财产", "夫妻共同"],
+              ["贷款", "剩余贷款", "折价"]
+            ],
+            "min_legal_citations": 1,
+            "max_questions": 2,
+            "min_delta_events": 2
+          },
+          "review": [
+            "应直接使用婚后购买、双方登记和共同还贷这些已知事实给出条件式分析。",
+            "只追问会显著影响房屋净值或具体分割方案的信息。"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "marriage_overlap",
+      "title": "分居与重婚风险",
+      "turns": [
+        {
+          "message": "我的情况是这样的，我女朋友结婚了，但是已经和她老公分居好几年，是不是算自动离婚了？我们没以夫妻的名义同居算重婚吗？",
+          "expect": {
+            "required_term_groups": [
+              [
+                "不会自动离婚",
+                "不算自动离婚",
+                "不等于自动离婚",
+                "不会自动解除婚姻关系",
+                "不是自动离婚",
+                "不能把她视为已经自动离婚"
+              ],
+              ["不能直接认定", "不构成重婚", "不能认定构成重婚", "尚不能认定构成重婚"]
+            ],
+            "forbidden_terms": [
+              "如果适用中国大陆法律",
+              "适用哪个国家或地区",
+              "她是否已经办理离婚",
+              "是否以夫妻名义同居",
+              "你们没有共同生活"
+            ],
+            "forbidden_factor_states": [
+              {
+                "key_or_label_terms": ["cohabitation.present", "是否共同生活"],
+                "state": "denied"
+              }
+            ],
+            "min_legal_citations": 1,
+            "max_answer_chars": 800,
+            "max_questions": 0,
+            "min_delta_events": 2
+          },
+          "review": [
+            "应把没有以夫妻名义同居当作已知事实，不用反事实提示或重复核实稀释结论。",
+            "分居不自动离婚和当前事实不能直接认定重婚应分别明确回答。"
+          ]
+        }
+      ]
+    }
+  ]
+}

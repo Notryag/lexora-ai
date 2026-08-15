@@ -12,6 +12,8 @@ from lexora_ai.domain import (
     LegalTurnAnswerMode,
     LegalTurnAnswerTarget,
     LegalTurnContextStatus,
+    LegalTurnFactorGroundingStatus,
+    LegalTurnFactorUpdate,
     LegalTurnFollowUpCandidate,
     LegalTurnFollowUpImpact,
     LegalTurnIntent,
@@ -57,6 +59,12 @@ def _reviewer(response: str) -> NorthFollowUpReviewer:
     return reviewer
 
 
+def _factor_reviewer(response: str) -> NorthFollowUpReviewer:
+    reviewer = NorthFollowUpReviewer(Settings(openai_api_key=SecretStr("test")))
+    reviewer._factor_client = FakeClient(response)  # type: ignore[assignment]
+    return reviewer
+
+
 async def test_follow_up_reviewer_parses_complete_structured_result() -> None:
     reviewer = _reviewer(
         '{"reviews":[{"factor_key":"criminal.prior_sentence_completion",'
@@ -92,3 +100,58 @@ async def test_follow_up_reviewer_suppresses_candidates_on_invalid_output() -> N
     )
 
     assert reviews[0].context_status == LegalTurnContextStatus.partially_resolved
+
+
+async def test_factor_reviewer_rejects_a_broader_denial_than_the_user_stated() -> None:
+    preparation = _preparation().model_copy(
+        update={
+            "factor_updates": [
+                LegalTurnFactorUpdate(
+                    key="cohabitation.present",
+                    label="是否共同生活",
+                    type="boolean",
+                    state="denied",
+                    value=False,
+                    materiality="high",
+                )
+            ]
+        }
+    )
+    reviewer = _factor_reviewer(
+        '{"reviews":[{"factor_key":"cohabitation.present",'
+        '"status":"overbroad","context_basis":"原话只否定以夫妻名义同居。"}]}'
+    )
+
+    reviews = await reviewer.review_factor_updates(
+        user_message="我们没有以夫妻名义同居。",
+        preparation=preparation,
+        factor_profile=CaseFactorProfile(),
+    )
+
+    assert reviews[0].status == LegalTurnFactorGroundingStatus.overbroad
+
+
+async def test_factor_reviewer_suppresses_claimed_updates_on_invalid_output() -> None:
+    preparation = _preparation().model_copy(
+        update={
+            "factor_updates": [
+                LegalTurnFactorUpdate(
+                    key="relationship.holds_out_as_spouses",
+                    label="是否以夫妻身份生活",
+                    type="boolean",
+                    state="denied",
+                    value=False,
+                    materiality="high",
+                )
+            ]
+        }
+    )
+    reviewer = _factor_reviewer("not json")
+
+    reviews = await reviewer.review_factor_updates(
+        user_message="我们没有以夫妻名义同居。",
+        preparation=preparation,
+        factor_profile=CaseFactorProfile(),
+    )
+
+    assert reviews[0].status == LegalTurnFactorGroundingStatus.unsupported

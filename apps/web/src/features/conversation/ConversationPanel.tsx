@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  Bot,
   BookOpenCheck,
   BookOpenText,
   Check,
@@ -15,7 +16,6 @@ import {
   Scale,
   SendHorizontal,
   Square,
-  Users,
   Wrench,
 } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
@@ -259,7 +259,7 @@ export function ConversationPanel({
                 {activityTimeline.map((activity) => {
                   const terminal = activity.state !== "running";
                   const failed = activity.state === "failed" || activity.state === "timed_out";
-                  const DetailIcon = activity.kind === "subagent" ? Users
+                  const DetailIcon = activity.kind === "subagent" ? Bot
                     : activity.kind === "tool" ? Wrench
                       : Activity;
                   return (

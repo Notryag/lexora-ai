@@ -1,8 +1,10 @@
 .panel {
   display: flex;
   min-width: 0;
+  min-height: 0;
   height: 100%;
   flex-direction: column;
+  overflow: hidden;
   background: var(--lexora-surface);
   border-left: 1px solid var(--lexora-border);
 }

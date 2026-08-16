@@ -9,6 +9,7 @@ export type ActivityTimelineItem = {
   technicalName?: string;
   state: ActivityDisplayState;
   level: 0 | 1;
+  parentKey?: string;
   callCount: number;
   order: number;
 };
@@ -18,8 +19,8 @@ type WorkingItem = Omit<ActivityTimelineItem, "state" | "callCount"> & {
 };
 
 const SUBAGENT_NAMES: Record<string, string> = {
-  case_analyst: "案件要素分析",
-  legal_researcher: "法律资料研究",
+  case_analyst: "案件分析 Agent",
+  legal_researcher: "法律研究 Agent",
 };
 
 const TOOL_NAMES: Record<string, string> = {
@@ -35,6 +36,7 @@ export function buildActivityTimeline(
   hasError: boolean,
 ): ActivityTimelineItem[] {
   const items = new Map<string, WorkingItem>();
+  const callersWithToolWork = new Set<string>();
   let operationalWorkSeen = false;
 
   activities.forEach((activity, index) => {
@@ -42,11 +44,20 @@ export function buildActivityTimeline(
     if (eventType === "subagent.step" || activity.type === "task_running") return;
 
     const caller = activity.caller ?? "unknown";
-    if (isModelEvent(eventType, activity.type) && caller.startsWith("subagent:")) return;
-
-    const presentation = activityPresentation(activity, operationalWorkSeen);
+    const presentation = activityPresentation(
+      activity,
+      operationalWorkSeen,
+      callersWithToolWork,
+    );
     if (!presentation) return;
     if (presentation.kind !== "model") operationalWorkSeen = true;
+    if (
+      isToolEvent(eventType, activity.type)
+      && caller.startsWith("subagent:")
+      && !activity.tool_name?.startsWith("delegate_")
+    ) {
+      callersWithToolWork.add(caller);
+    }
 
     const existing = items.get(presentation.key);
     const item = existing ?? {
@@ -58,18 +69,26 @@ export function buildActivityTimeline(
     items.set(presentation.key, item);
   });
 
-  return [...items.values()]
+  const timeline = [...items.values()]
     .sort((left, right) => left.order - right.order)
     .map(({ calls, ...item }) => ({
       ...item,
       state: finalState(calls, isRunning, hasError),
       callCount: calls.size,
     }));
+  const parentKeys = new Set(timeline.filter((item) => !item.parentKey).map((item) => item.key));
+  return [
+    ...timeline.flatMap((item) => item.parentKey
+      ? []
+      : [item, ...timeline.filter((child) => child.parentKey === item.key)]),
+    ...timeline.filter((item) => item.parentKey && !parentKeys.has(item.parentKey)),
+  ];
 }
 
 function activityPresentation(
   activity: ConversationStreamActivity,
   operationalWorkSeen: boolean,
+  callersWithToolWork: Set<string>,
 ): Omit<WorkingItem, "calls" | "order"> | null {
   const eventType = activity.event_type ?? activity.type;
   const delegatedSubagent = activity.tool_name?.startsWith("delegate_")
@@ -81,7 +100,7 @@ function activityPresentation(
     return {
       key: `subagent:${subagentName}`,
       kind: "subagent",
-      title: SUBAGENT_NAMES[subagentName] ?? "专业法律分析",
+      title: SUBAGENT_NAMES[subagentName] ?? "专业分析 Agent",
       technicalName: subagentName,
       level: 0,
     };
@@ -95,20 +114,47 @@ function activityPresentation(
       title: TOOL_NAMES[activity.tool_name] ?? "执行辅助工具",
       technicalName: activity.tool_name,
       level: caller.startsWith("subagent:") ? 1 : 0,
+      ...(caller.startsWith("subagent:")
+        ? { parentKey: `subagent:${caller.slice("subagent:".length)}` }
+        : {}),
     };
   }
 
   if (isModelEvent(eventType, activity.type)) {
+    const caller = activity.caller ?? "unknown";
+    if (caller.startsWith("subagent:")) {
+      const subagentName = caller.slice("subagent:".length);
+      const phase = callersWithToolWork.has(caller) ? "synthesis" : "analysis";
+      return {
+        key: `model:${caller}:${phase}`,
+        kind: "model",
+        title: subagentModelPhaseTitle(subagentName, phase),
+        technicalName: caller,
+        level: 1,
+        parentKey: `subagent:${subagentName}`,
+      };
+    }
     const phase = operationalWorkSeen ? "synthesis" : "analysis";
     return {
       key: `model:${phase}`,
       kind: "model",
-      title: phase === "synthesis" ? "整理分析结论" : "分析问题",
+      title: phase === "synthesis" ? "主 Agent 整理分析结论" : "主 Agent 理解问题",
       level: 0,
     };
   }
 
   return null;
+}
+
+function subagentModelPhaseTitle(
+  subagentName: string,
+  phase: "analysis" | "synthesis",
+): string {
+  if (subagentName === "case_analyst") return "提取并核对案件要素";
+  if (subagentName === "legal_researcher") {
+    return phase === "synthesis" ? "整理检索到的法律依据" : "规划法律检索范围";
+  }
+  return phase === "synthesis" ? "整理专业分析结果" : "执行专业分析";
 }
 
 function activityIdentity(activity: ConversationStreamActivity, index: number): string {

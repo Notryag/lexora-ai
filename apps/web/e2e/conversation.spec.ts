@@ -260,6 +260,12 @@ test("persists material and continues a cited legal conversation", async ({ page
   });
 
   await page.goto("/");
+  const originalViewport = page.viewportSize();
+  await page.setViewportSize({ width: originalViewport?.width ?? 1280, height: 480 });
+  const composerBox = await page.getByLabel("描述案件情况").boundingBox();
+  expect(composerBox).not.toBeNull();
+  expect((composerBox?.y ?? 0) + (composerBox?.height ?? 0)).toBeLessThanOrEqual(480);
+  if (originalViewport) await page.setViewportSize(originalViewport);
   await page.getByRole("button", { name: /档案 0/ }).click();
   await page.getByLabel("案件类型").fill("劳动合同争议");
   await page.getByRole("textbox", { name: "当事人", exact: true }).fill("张某（劳动者）\n某公司");
@@ -284,13 +290,13 @@ test("persists material and continues a cited legal conversation", async ({ page
   await expect(page.getByText("[1]", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("L1234567890abcdef:C30", { exact: true })).toHaveCount(0);
   await expect(page.getByText("未在正文使用的法规", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("法律资料研究", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("法律研究 Agent", { exact: true })).toHaveCount(1);
   await expect(page.getByText("检索法规依据", { exact: true })).toHaveCount(1);
   await expect(page.getByText("子任务处理中", { exact: true })).toHaveCount(0);
   await expect(page.getByText("delegate_legal_researcher", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("分析过程").getByText("已完成", { exact: true })).toHaveCount(3);
   await page.reload();
-  await expect(page.getByText("法律资料研究", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("法律研究 Agent", { exact: true })).toHaveCount(1);
   await expect(page.getByText("检索法规依据", { exact: true })).toHaveCount(1);
   await expect(page.getByLabel("分析过程").getByText("已完成", { exact: true })).toHaveCount(3);
   await expect(page.getByRole("button", { name: "档案 4，已更新" })).toBeVisible();

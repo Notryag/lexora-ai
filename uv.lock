@@ -5,7 +5,7 @@ requires-python = ">=3.11"
 [[package]]
 name = "agent-application-platform"
 version = "0.1.0"
-source = { git = "https://github.com/Notryag/dayboard.git?subdirectory=packages%2Fagent-platform&rev=6e21a4ffb9838eca1983e5857fe7f4e21da15775#6e21a4ffb9838eca1983e5857fe7f4e21da15775" }
+source = { git = "https://github.com/Notryag/dayboard.git?subdirectory=packages%2Fagent-platform&rev=c096bd4#c096bd48658f9766c8d45642ae3978d44840bae7" }
 dependencies = [
     { name = "pydantic" },
 ]
@@ -690,13 +690,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-application-platform", git = "https://github.com/Notryag/dayboard.git?subdirectory=packages%2Fagent-platform&rev=6e21a4ffb9838eca1983e5857fe7f4e21da15775" },
+    { name = "agent-application-platform", git = "https://github.com/Notryag/dayboard.git?subdirectory=packages%2Fagent-platform&rev=c096bd4" },
     { name = "alembic", specifier = ">=1.16.0,<2.0.0" },
     { name = "asyncpg", specifier = ">=0.30.0,<1.0.0" },
     { name = "docx2txt", specifier = ">=0.9,<1.0" },
     { name = "fastapi", specifier = ">=0.116.0,<1.0.0" },
     { name = "langchain-openai", specifier = ">=1.4.0,<2.0.0" },
-    { name = "north", extras = ["postgres"], git = "https://github.com/Notryag/north-agent.git?subdirectory=packages%2Fharness&rev=ea6ef7f" },
+    { name = "north", extras = ["postgres"], git = "https://github.com/Notryag/north-agent.git?subdirectory=packages%2Fharness&rev=a41035a" },
     { name = "pgvector", specifier = ">=0.3.0,<1.0.0" },
     { name = "pydantic-settings", specifier = ">=2.10.0,<3.0.0" },
     { name = "pypdf", specifier = ">=5.8.0,<7.0.0" },
@@ -805,7 +805,7 @@ wheels = [
 [[package]]
 name = "north"
 version = "0.1.0"
-source = { git = "https://github.com/Notryag/north-agent.git?subdirectory=packages%2Fharness&rev=ea6ef7f#ea6ef7fe3fcf1cd09479981bea2ca3fa80e42630" }
+source = { git = "https://github.com/Notryag/north-agent.git?subdirectory=packages%2Fharness&rev=a41035a#a41035aaf326752378c233daae761a80b1ad4ec6" }
 dependencies = [
     { name = "langchain" },
     { name = "langchain-openai" },

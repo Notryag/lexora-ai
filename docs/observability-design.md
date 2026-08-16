@@ -45,7 +45,8 @@ Run events API -> reload / history / audit
 - `agent_runs.status` 仍是 Run 生命周期的权威来源；
 - `message.human` 和 `message.ai` 仍是用户对话历史的权威来源。
 
-是否在本阶段同时把 NDJSON 切换为 DeerFlow 式 SSE，需要在实施前确认，见第 14 节。
+已确认本阶段把 NDJSON 切换为 DeerFlow 式 SSE，并接入 North `StreamBridge`、heartbeat、事件 ID、
+`Last-Event-ID` 和 gap recovery。
 
 ## 3. 与 DeerFlow 的对齐原则
 
@@ -65,7 +66,7 @@ Run events API -> reload / history / audit
 - 事件目录由机器可读 JSON Schema 和代码 catalog 共同约束；
 - consumer 忽略未知事件、字段和可选 payload。
 
-### 3.2 有理由保留的差异
+### 3.2 当前暂定差异
 
 | 差异 | DeerFlow | Lexora 建议 | 理由 |
 | --- | --- | --- | --- |
@@ -74,15 +75,16 @@ Run events API -> reload / history / audit
 | Subagent AI step 文本 | 可在 Subtask Card 展示中间 AI 文本 | schema 对齐，但用户层 `text` 只允许受控阶段文案或空值 | 法律咨询包含敏感事实，也不能把自由中间推理当成“思维链”展示 |
 | 产品展示 | 通用 Subtask Card | Lexora 的紧凑分析时间线 | 角色少、流程短，且当前工作台不应引入卡片嵌套；数据契约仍保持兼容 |
 
-### 3.3 需要确认的传输差异
+这些差异是当前实施选择，不是永久架构承诺。每项都必须保持适配边界和测试，后续继续跟踪 DeerFlow
+演进；如果 DeerFlow 补齐一等工具事件、敏感内容投影或兼容的扩展信封，应重新评估并优先收敛。
+
+### 3.3 已确认的传输收敛
 
 DeerFlow 使用 SSE、`StreamBridge`、heartbeat、事件 ID、`Last-Event-ID` 和 gap recovery。Lexora
 当前使用一次 POST 请求上的 NDJSON，并在断连时取消任务。
 
-从长期设计看，SSE 更适合本次可观测性需求：多个事件类型、心跳、游标和未来断线恢复都有明确
-协议语义。建议本阶段同步切换为 SSE，并继续使用 `fetch()` 发送 POST 和消费响应，不受浏览器
-`EventSource` 只能 GET 的限制。若本阶段保留 NDJSON，事件模型仍可先同步，但后续增加后台 Run
-和断线恢复时会再次修改传输层。
+本阶段同步切换为 SSE，并继续使用 `fetch()` 发送 POST 和消费响应，不受浏览器 `EventSource`
+只能 GET 的限制。实现复用 North `StreamBridge`，不在 Lexora 创建第二套 replay 缓冲。
 
 ## 4. 当前基础与缺口
 
@@ -482,13 +484,10 @@ UI 名称使用“分析过程”或“执行记录”，不用“思维链”�
 - 把 Langfuse/LangSmith 当作用户页面的数据源；
 - 为了展示步骤将动态 Supervisor 改回固定 Workflow。
 
-## 15. 实施前待确认
+## 15. 已确认实施顺序
 
 先完成 North 的关联字段和 Subagent 生命周期事件，再实现 Lexora projector/journal，最后开发页面。
 如果先做前端，只能根据 `delegate_*` 名称和时间顺序猜测层级，后续一定会重写事件状态模型。
 
-需要确认：本阶段是否同时把 Lexora 对话流从 NDJSON 切换为 DeerFlow 式 SSE，并实现内存
-`StreamBridge`、heartbeat、事件 ID、`Last-Event-ID` 和 gap recovery？
-
-本文建议选择“是”。它会扩大本次后端与前端传输改动，但可以一次形成与 DeerFlow 同步的稳定
-协议；选择“否”则可以更快交付页面活动时间线，但后续实现后台 Run 或断线恢复时需要再次迁移。
+已确认本阶段同步接入 DeerFlow 式 SSE 和 North `StreamBridge`。当前四项差异只作为可替换适配
+记录，后续不保证保留；每次 DeerFlow 相关升级都应重新审视是否能够删除差异。

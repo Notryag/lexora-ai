@@ -8,15 +8,18 @@ from north.runtime import MemoryStreamBridge
 
 from lexora_ai import __version__
 from lexora_ai.api.routes import router
+from lexora_ai.api.task_registry import BackgroundTaskRegistry
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.north_gateway_lock = asyncio.Lock()
     app.state.stream_bridge = MemoryStreamBridge(max_events=512)
+    app.state.run_tasks = BackgroundTaskRegistry()
     try:
         yield
     finally:
+        await app.state.run_tasks.close()
         await app.state.stream_bridge.close()
         manager = getattr(app.state, "checkpointer_manager", None)
         if manager is not None:

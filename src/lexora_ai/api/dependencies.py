@@ -27,9 +27,19 @@ from lexora_ai.infrastructure import (
 )
 from lexora_ai.infrastructure.material_parser import parse_material_file
 
+from .task_registry import BackgroundTaskRegistry
+
 
 def get_stream_bridge(request: Request) -> StreamBridge:
     return request.app.state.stream_bridge
+
+
+def get_run_task_registry(request: Request) -> BackgroundTaskRegistry:
+    registry = getattr(request.app.state, "run_tasks", None)
+    if registry is None:
+        registry = BackgroundTaskRegistry()
+        request.app.state.run_tasks = registry
+    return registry
 
 
 async def get_north_gateway(

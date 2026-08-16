@@ -2,6 +2,8 @@ import { apiClient, apiErrorMessage } from "@/lib/api/client";
 import type { components } from "@/lib/api/schema";
 import type { ConversationStreamActivity } from "@/features/conversation/types";
 
+import { readSseFrames, waitForRetry } from "./sse";
+
 export type { ConversationStreamActivity } from "@/features/conversation/types";
 
 export type LegalCase = components["schemas"]["LegalCase"];
@@ -152,64 +154,102 @@ export async function streamCaseMessage(
     const payload: unknown = await response.json();
     throw new Error(apiErrorMessage(payload));
   }
-  if (!response.body) throw new Error("浏览器未能建立流式响应。请稍后重试。");
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
+  const retryDelays = [300, 600, 1_200];
+  let currentResponse: Response | null = response;
+  let runId: string | null = null;
+  let lastEventId: string | null = null;
   let result: CaseConversationTurnResult | null = null;
-  let eventName = "message";
-  let eventData: string[] = [];
+  let ended = false;
+  let resumeAttempt = 0;
 
-  function consumeFrame() {
-    if (!eventData.length) {
-      eventName = "message";
-      return;
+  function consumeFrame(eventName: string, eventId: string | null, payload: string) {
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(payload) as Record<string, unknown>;
+    } catch {
+      throw new TerminalStreamError("分析服务返回了无法识别的流事件，请刷新后查看结果。");
     }
-    const data = JSON.parse(eventData.join("\n")) as Record<string, unknown>;
-    if (eventName === "messages" && typeof data.delta === "string") {
+
+    if (eventName === "metadata") {
+      if (typeof data.run_id !== "string" || !data.run_id) {
+        throw new TerminalStreamError("分析服务未返回有效的运行标识，请刷新后重试。");
+      }
+      if (runId && runId !== data.run_id) {
+        throw new TerminalStreamError("分析流的运行标识发生变化，请刷新后查看结果。");
+      }
+      runId = data.run_id;
+    } else if (eventName === "messages" && typeof data.delta === "string") {
       onDelta(data.delta);
     } else if (eventName === "custom" && onActivity) {
       onActivity(data as ConversationStreamActivity);
     } else if (eventName === "complete") {
       result = data.result as CaseConversationTurnResult;
-    } else if (eventName === "error" || eventName === "gap") {
-      throw new Error(
-        typeof data.message === "string" ? data.message : "分析流已中断，请重试。",
+    } else if (eventName === "error") {
+      throw new TerminalStreamError(
+        typeof data.message === "string" ? data.message : "分析失败，请稍后重试。",
       );
+    } else if (eventName === "gap") {
+      throw new TerminalStreamError(
+        "实时事件已过期，案件记录仍已保存。请刷新页面查看最新结果。",
+      );
+    } else if (eventName === "end") {
+      ended = true;
     }
-    eventName = "message";
-    eventData = [];
-  }
-
-  function consumeLine(line: string) {
-    if (!line.trim()) {
-      consumeFrame();
-      return;
-    }
-    if (line.startsWith(":")) return;
-    if (line.startsWith("event:")) {
-      eventName = line.slice(6).trim() || "message";
-      return;
-    }
-    if (line.startsWith("data:")) {
-      eventData.push(line.slice(5).trimStart());
-    }
+    if (eventId) lastEventId = eventId;
   }
 
   while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    lines.forEach(consumeLine);
-    if (done) break;
+    try {
+      if (currentResponse === null) {
+        const headers = new Headers({ Accept: "text/event-stream" });
+        if (lastEventId) headers.set("Last-Event-ID", lastEventId);
+        currentResponse = await fetch(
+          `/api/v1/cases/${caseId}/runs/${runId}/events/stream`,
+          {
+            method: "GET",
+            headers,
+            signal,
+          },
+        );
+        if (!currentResponse.ok) {
+          if (currentResponse.status >= 500) throw new Error("resume unavailable");
+          throw new TerminalStreamError(
+            "无法恢复本次实时连接，案件记录仍已保存。请刷新页面查看最新结果。",
+          );
+        }
+      }
+      await readSseFrames(currentResponse, ({ event, id, data }) => {
+        consumeFrame(event, id, data);
+      });
+    } catch (error) {
+      if (result) return result;
+      if (error instanceof TerminalStreamError || signal?.aborted) throw error;
+    }
+
+    if (result) return result;
+    if (ended) {
+      throw new TerminalStreamError(
+        "分析已经结束，但实时结果不完整。案件记录仍已保存，请刷新页面查看。",
+      );
+    }
+    if (!runId) {
+      throw new TerminalStreamError(
+        "连接在分析启动前中断。为避免重复提交，请刷新页面确认后再试。",
+      );
+    }
+    if (resumeAttempt >= retryDelays.length) {
+      throw new TerminalStreamError(
+        "实时连接暂时无法恢复，案件记录仍已保存。请刷新页面查看最新结果。",
+      );
+    }
+    await waitForRetry(retryDelays[resumeAttempt], signal);
+    resumeAttempt += 1;
+    currentResponse = null;
   }
-  if (buffer) consumeLine(buffer);
-  consumeFrame();
-  if (!result) throw new Error("分析响应提前结束，请重试。");
-  return result;
 }
+
+class TerminalStreamError extends Error {}
 
 export async function cancelCaseRun(caseId: string): Promise<CaseRun> {
   const { data, error } = await apiClient.POST("/api/v1/cases/{case_id}/run/cancel", {

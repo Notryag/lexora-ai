@@ -45,6 +45,7 @@ const persistedActivityHistory = {
 
 test("persists material and continues a cited legal conversation", async ({ page }) => {
   const conversationRequests: string[] = [];
+  const resumeRequests: Array<{ method: string; lastEventId: string | null }> = [];
   let created = false;
   let materialAdded = false;
   let profile = {
@@ -74,6 +75,34 @@ test("persists material and continues a cited legal conversation", async ({ page
 
     if (path.includes("/messages") || path.endsWith("/run")) {
       conversationRequests.push(`${method} ${path}`);
+    }
+
+    if (path.endsWith(`/runs/${runId}/events/stream`) && method === "GET") {
+      resumeRequests.push({
+        method,
+        lastEventId: request.headers()["last-event-id"] ?? null,
+      });
+      await route.fulfill({
+        contentType: "text/event-stream",
+        body: [
+          sse("messages", {
+            delta: "支持拖欠工资的初步主张 [M1:C1]，工资支付规则见 [L1234567890abcdef:C30]。",
+          }, "0-9"),
+          sse("complete", { result: {
+            case_id: caseId,
+            thread_id: threadId,
+            run_id: runId,
+            assistant_message: messages[1].content as string,
+            material_count: 1,
+            legal_citations: messages[1].legal_citations,
+            case_law_citations: [],
+            profile_updated: true,
+            case_profile: profile,
+          } }, "0-10"),
+          sse("end", {}),
+        ].join(""),
+      });
+      return;
     }
 
     if (path === "/api/v1/cases" && method === "GET") {
@@ -175,67 +204,54 @@ test("persists material and continues a cited legal conversation", async ({ page
       await route.fulfill({
         contentType: "text/event-stream",
         body: [
-          sse("metadata", { run_id: runId, thread_id: threadId }),
+          sse("metadata", { run_id: runId, thread_id: threadId }, "0-0"),
           sse("custom", {
             type: "tool_started",
             event_type: "tool.started",
             tool_name: "delegate_legal_researcher",
             call_id: "research-task",
-          }),
+          }, "0-1"),
           sse("custom", {
             type: "task_started",
             event_type: "subagent.start",
             subagent_type: "legal_researcher",
             task_id: "research-task",
-          }),
+          }, "0-2"),
           sse("custom", {
             type: "tool_started",
             event_type: "tool.started",
             tool_name: "search_legal_authorities",
             call_id: "authority-search-1",
             caller: "subagent:legal_researcher",
-          }),
+          }, "0-3"),
           sse("custom", {
             type: "tool_completed",
             event_type: "tool.completed",
             tool_name: "search_legal_authorities",
             call_id: "authority-search-1",
             caller: "subagent:legal_researcher",
-          }),
+          }, "0-4"),
           sse("custom", {
             type: "task_running",
             event_type: "subagent.step",
             tool_name: "search_legal_authorities",
             task_id: "research-task",
             kind: "tool",
-          }),
+          }, "0-5"),
           sse("custom", {
             type: "tool_completed",
             event_type: "tool.completed",
             tool_name: "delegate_legal_researcher",
             call_id: "research-task",
-          }),
+          }, "0-6"),
           sse("custom", {
             type: "task_completed",
             event_type: "subagent.end",
             subagent_type: "legal_researcher",
             task_id: "research-task",
             status: "completed",
-          }),
-          sse("messages", { delta: "现有工资记录能够" }),
-          sse("messages", { delta: "支持拖欠工资的初步主张 [M1:C1]，工资支付规则见 [L1234567890abcdef:C30]。" }),
-          sse("complete", { result: {
-            case_id: caseId,
-            thread_id: threadId,
-            run_id: runId,
-            assistant_message: messages[1].content as string,
-            material_count: 1,
-            legal_citations: messages[1].legal_citations,
-            case_law_citations: [],
-            profile_updated: true,
-            case_profile: profile,
-          } }),
-          sse("end", {}),
+          }, "0-7"),
+          sse("messages", { delta: "现有工资记录能够" }, "0-8"),
         ].join(""),
       });
       return;
@@ -289,9 +305,10 @@ test("persists material and continues a cited legal conversation", async ({ page
   expect(conversationRequests.filter((item) => item.startsWith("POST "))).toEqual([
     `POST /api/v1/cases/${caseId}/messages/stream`,
   ]);
+  expect(resumeRequests).toEqual([{ method: "GET", lastEventId: "0-8" }]);
   expect(conversationRequests.some((item) => item.endsWith("/run"))).toBe(false);
 });
 
-function sse(event: string, data: unknown): string {
-  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+function sse(event: string, data: unknown, id?: string): string {
+  return `${id ? `id: ${id}\n` : ""}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }

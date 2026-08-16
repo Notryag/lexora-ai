@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime
 from uuid import UUID
@@ -15,6 +16,8 @@ from lexora_ai.api.dependencies import (
     get_persistent_conversation_service,
     get_stream_bridge,
 )
+from lexora_ai.api.routes import stream_case_conversation_turn
+from lexora_ai.api.task_registry import BackgroundTaskRegistry
 from lexora_ai.application import (
     AnalyzeCaseService,
     GeneratedCaseAnalysis,
@@ -23,6 +26,7 @@ from lexora_ai.application import (
 )
 from lexora_ai.domain import (
     CaseAnalysisRequest,
+    CaseConversationTurnRequest,
     CaseConversationTurnResult,
     CaseRunActivity,
     CaseRunActivityHistory,
@@ -116,6 +120,46 @@ class UnavailablePersistentConversationService:
         raise ModelTemporarilyUnavailableError("模型服务暂时不可用，请稍后重试。")
 
 
+class DisconnectPersistentConversationService:
+    def __init__(self, bridge: MemoryStreamBridge) -> None:
+        self.bridge = bridge
+        self.release = asyncio.Event()
+        self.completed = asyncio.Event()
+        self.cancelled = False
+
+    async def execute(self, case_id, request, *, on_text_delta=None, on_run_started=None):
+        del on_text_delta
+        run_id = UUID("018f6f7c-3500-7c4a-83e7-64dd8aa83294")
+        thread_id = UUID("018f6f7c-3500-7c4a-83e7-64dd8aa83293")
+        try:
+            if on_run_started is not None:
+                await on_run_started(run_id)
+            await self.bridge.publish(
+                str(run_id),
+                "metadata",
+                {"run_id": str(run_id), "thread_id": str(thread_id)},
+            )
+            await self.release.wait()
+            await self.bridge.publish(str(run_id), "messages", {"delta": "续传成功"})
+            await self.bridge.publish_end(str(run_id))
+            self.completed.set()
+            return CaseConversationTurnResult(
+                case_id=case_id,
+                thread_id=thread_id,
+                run_id=run_id,
+                assistant_message=f"续传成功：{request.message}",
+                material_count=0,
+            )
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+
+
+class ConnectedRequest:
+    async def is_disconnected(self) -> bool:
+        return False
+
+
 class FakeCaseRunService:
     async def get_latest_activity_history(self, case_id):
         return CaseRunActivityHistory(
@@ -199,6 +243,40 @@ def test_case_conversation_stream_returns_deltas_and_completion() -> None:
     assert result["assistant_message"] == "你好，已收到：hi"
     assert result["profile_updated"] is False
     assert result["case_profile"]["key_facts"] == []
+
+
+async def test_case_conversation_run_continues_after_post_stream_disconnect() -> None:
+    bridge = MemoryStreamBridge()
+    service = DisconnectPersistentConversationService(bridge)
+    tasks = BackgroundTaskRegistry()
+    case_id = UUID("018f6f7c-3500-7c4a-83e7-64dd8aa83291")
+    run_id = "018f6f7c-3500-7c4a-83e7-64dd8aa83294"
+
+    response = await stream_case_conversation_turn(
+        case_id=case_id,
+        request=CaseConversationTurnRequest(message="hi"),
+        http_request=ConnectedRequest(),  # type: ignore[arg-type]
+        service=service,  # type: ignore[arg-type]
+        stream_bridge=bridge,
+        run_tasks=tasks,
+        last_event_id=None,
+    )
+    iterator = response.body_iterator
+    first_frame = await anext(iterator)
+    first_event_id = parse_sse(first_frame)[0]["id"]
+    await iterator.aclose()
+
+    service.release.set()
+    await asyncio.wait_for(service.completed.wait(), timeout=1)
+    replay = [
+        event
+        async for event in bridge.subscribe(run_id, last_event_id=str(first_event_id))
+    ]
+
+    assert service.cancelled is False
+    assert [event.event for event in replay] == ["messages", "__end__"]
+    assert replay[0].data == {"delta": "续传成功"}
+    await tasks.close()
 
 
 def test_case_conversation_stream_classifies_provider_unavailability() -> None:

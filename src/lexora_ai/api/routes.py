@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from contextlib import suppress
 from typing import Annotated
 from uuid import UUID
 
@@ -74,8 +73,10 @@ from .dependencies import (
     get_legal_conversation_service,
     get_legal_source_service,
     get_persistent_conversation_service,
+    get_run_task_registry,
     get_stream_bridge,
 )
+from .task_registry import BackgroundTaskRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -441,6 +442,7 @@ async def stream_case_conversation_turn(
         Depends(get_persistent_conversation_service),
     ],
     stream_bridge: Annotated[StreamBridge, Depends(get_stream_bridge)],
+    run_tasks: Annotated[BackgroundTaskRegistry, Depends(get_run_task_registry)],
     last_event_id: str | None = Header(
         default=None,
         alias="Last-Event-ID",
@@ -470,37 +472,31 @@ async def stream_case_conversation_turn(
                     raise
                 logger.exception("Case conversation stream failed", extra={"case_id": str(case_id)})
 
-        task = asyncio.create_task(execute())
+        run_tasks.create(execute())
         try:
-            try:
-                run_id = await started
-            except BaseException as exc:
-                if isinstance(exc, asyncio.CancelledError):
-                    raise
-                yield _sse_frame("error", _pre_run_stream_error(exc))
-                return
+            run_id = await started
+        except BaseException as exc:
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            yield _sse_frame("error", _pre_run_stream_error(exc))
+            return
 
-            async for entry in stream_bridge.subscribe(
-                str(run_id),
-                last_event_id=last_event_id,
-            ):
-                if await http_request.is_disconnected():
-                    return
-                if entry == HEARTBEAT_SENTINEL:
-                    yield ": keep-alive\n\n"
-                    continue
-                if entry == END_SENTINEL:
-                    yield _sse_frame("end", {})
-                    return
-                if entry.event == REPLAY_GAP_EVENT:
-                    yield _sse_frame("gap", entry.data)
-                    continue
-                yield _sse_frame(entry.event, entry.data, event_id=entry.id)
-        finally:
-            if not task.done():
-                task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+        async for entry in stream_bridge.subscribe(
+            str(run_id),
+            last_event_id=last_event_id,
+        ):
+            if await http_request.is_disconnected():
+                return
+            if entry == HEARTBEAT_SENTINEL:
+                yield ": keep-alive\n\n"
+                continue
+            if entry == END_SENTINEL:
+                yield _sse_frame("end", {})
+                return
+            if entry.event == REPLAY_GAP_EVENT:
+                yield _sse_frame("gap", entry.data)
+                continue
+            yield _sse_frame(entry.event, entry.data, event_id=entry.id)
 
     return StreamingResponse(
         event_stream(),

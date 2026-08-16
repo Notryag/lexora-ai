@@ -289,35 +289,36 @@ North 不负责中文展示文案、法律阶段名、事件持久化或用户�
 
 ## 9. 写入与实时传输
 
-### 9.1 RunActivityJournal
+### 9.1 RunJournal
 
-新增 Lexora `RunActivityJournal`，接收 projector 处理后的事件：
+Lexora `RunJournal` 接收 North `RuntimeJournal` 投影后的事件：
 
 ```text
 North callback
     -> RuntimeEventProjector
-    -> RunActivityJournal
-        +-> live queue
-        +-> append buffer
+    -> RunJournal
+        +-> StreamBridge
+        +-> agent_run_events
 ```
 
 建议语义：
 
 - Subagent 使用稳定 `task_id`，model/tool 使用 callback `call_id`；
 - live 事件携带稳定事件 ID，持久化时复用该 ID；
-- live queue 立即发送，避免数据库写入增加模型回调延迟；
-- 按 20 条或 250ms 小批量持久化；
-- Subagent/tool/Run 终态事件立即 flush；
-- `complete` 事件发送前必须等待 journal 最终 flush；
+- 第一阶段按事件持久化，先稳定事件语义和失败隔离；批量写入作为后续性能优化；
+- 事件先完成安全投影，再写入 `agent_run_events` 并发送到 StreamBridge；
+- Subagent/tool/Run 终态事件使用稳定事件 ID；
+- `complete` 事件在最终消息持久化后发送；
 - 写入失败记录服务日志，但不能把成功的法律分析改成失败；
 - 队列和 payload 都必须有大小上限。
 
-仓储新增 `append_batch`，一次锁定 Thread 并分配连续 `seq`，避免每条事件执行一次
-`max(seq)` 和行锁。事件量第一版应保持在每 Run 数十条，不保存 token delta。
+后续性能优化可增加 `append_batch`，一次锁定 Thread 并分配连续 `seq`，避免每条事件执行一次
+`max(seq)` 和行锁。事件量第一版应保持在每 Run 数十条，不保存 token delta。`RunJournal`
+不是独立数据表：它写入现有 `agent_run_events`；`agent_runs` 仍只维护 Run 生命周期。
 
-### 9.2 推荐的 SSE 协议
+### 9.2 当前 SSE 协议
 
-若确认本阶段同步 DeerFlow，现有 POST stream 端点改为 `text/event-stream`，使用带类型和 ID 的帧：
+现有 POST stream 端点使用 `text/event-stream`，使用带类型和 ID 的帧：
 
 ```text
 event: metadata

@@ -6,6 +6,7 @@ from uuid import UUID
 import pytest
 from agent_platform.application import AgentRunService
 from agent_platform.core import UserContext
+from north.runtime import MemoryStreamBridge
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -108,8 +109,9 @@ class RecordingGateway:
         case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
         retrieval=None,
         case_memory=None,
+        event_sink=None,
     ) -> GeneratedConversationTurn:
-        del run_id, checkpoint_id
+        del run_id, checkpoint_id, event_sink
         if retrieval is not None:
             evidence = await retrieval.search_materials(request.message)
             legal_authorities = await retrieval.search_legal_authorities(request.message)
@@ -145,7 +147,9 @@ class RecordingGateway:
         case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
         retrieval=None,
         case_memory=None,
+        event_sink=None,
     ) -> GeneratedConversationTurn:
+        del event_sink
         result = await self.converse(
             request,
             thread_id=thread_id,
@@ -158,8 +162,8 @@ class RecordingGateway:
             retrieval=retrieval,
             case_memory=case_memory,
         )
-        on_text_delta("已记录：")
-        on_text_delta(f"{request.message} [M1:C1]")
+        await on_text_delta("已记录：")
+        await on_text_delta(f"{request.message} [M1:C1]")
         return result
 
 
@@ -769,6 +773,51 @@ async def test_persisted_embeddings_enable_semantic_material_retrieval(session_f
     )
 
     assert [chunk.reference for chunk in gateway.evidence[0]] == ["M1:C1"]
+
+
+@pytest.mark.asyncio
+async def test_stream_bridge_receives_one_product_stream_without_duplicate_messages(
+    session_factory,
+) -> None:
+    context = UserContext(
+        user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        timezone="Asia/Shanghai",
+        locale="zh-CN",
+    )
+    workspace = CaseWorkspaceService(session_factory, context, parse_material_file)
+    bridge = MemoryStreamBridge()
+    conversation = PersistentLegalConversationService(
+        session_factory,
+        context,
+        RecordingGateway(),
+        stream_bridge=bridge,
+    )
+    case = await workspace.create_case(LegalCaseCreate(title="流式测试案件"))
+
+    result = await conversation.execute(
+        case.id,
+        CaseConversationTurnRequest(message="请记录这段情况"),
+    )
+
+    events = []
+    async for stream_event in bridge.subscribe(str(result.run_id)):
+        events.append(stream_event)
+
+    assert [event.event for event in events] == [
+        "metadata",
+        "messages",
+        "messages",
+        "complete",
+        "__end__",
+    ]
+    async with session_factory() as session:
+        unit_of_work = LexoraUnitOfWork(session)
+        persisted = await unit_of_work.events.list_for_run(context, result.run_id)
+    assert [
+        event.event_type
+        for event in persisted
+        if event.event_type in {"message.human", "message.ai"}
+    ] == ["message.human", "message.ai"]
 
 
 def test_material_parser_accepts_utf8_text_and_rejects_unknown_formats() -> None:

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import TypeVar
 from uuid import UUID
 
@@ -30,7 +31,10 @@ from lexora_ai.application.ports import (
     EmbeddingGateway,
     LegalConversationGateway,
     LegalKnowledgePort,
+    RunStreamBridge,
+    TextDeltaSink,
 )
+from lexora_ai.application.run_journal import ProjectedRunEvent, RunJournal
 from lexora_ai.db.session import SessionFactory
 from lexora_ai.db.unit_of_work import LexoraUnitOfWork
 from lexora_ai.domain import (
@@ -275,6 +279,7 @@ class PersistentLegalConversationService:
         embedding_gateway: EmbeddingGateway | None = None,
         legal_knowledge: LegalKnowledgePort | None = None,
         case_law_knowledge: CaseLawKnowledgePort | None = None,
+        stream_bridge: RunStreamBridge | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._context = context
@@ -282,13 +287,15 @@ class PersistentLegalConversationService:
         self._embedding_gateway = embedding_gateway
         self._legal_knowledge = legal_knowledge
         self._case_law_knowledge = case_law_knowledge
+        self._stream_bridge = stream_bridge
 
     async def execute(
         self,
         case_id: UUID,
         request: CaseConversationTurnRequest,
         *,
-        on_text_delta: Callable[[str], None] | None = None,
+        on_text_delta: TextDeltaSink | None = None,
+        on_run_started: Callable[[UUID], Awaitable[None]] | None = None,
     ) -> CaseConversationTurnResult:
         async with self._session_factory() as session:
             unit_of_work = LexoraUnitOfWork(session)
@@ -339,6 +346,34 @@ class PersistentLegalConversationService:
                 raise
 
         await self._mark_running(submission.run_id)
+        run_key = str(submission.run_id)
+        if on_run_started is not None:
+            await on_run_started(submission.run_id)
+        if self._stream_bridge is not None:
+            await _publish_stream_event(
+                self._stream_bridge,
+                run_key,
+                "metadata",
+                {"run_id": run_key, "thread_id": str(thread.id)},
+            )
+
+        async def publish_activity(event: object) -> None:
+            if self._stream_bridge is None or not isinstance(event, ProjectedRunEvent):
+                return
+            await _publish_stream_event(
+                self._stream_bridge,
+                run_key,
+                "custom",
+                _live_activity_payload(event),
+            )
+
+        run_journal = RunJournal(
+            self._session_factory,
+            self._context,
+            thread_id=thread.id,
+            run_id=submission.run_id,
+            on_event=publish_activity,
+        )
         history = tuple(
             ConversationContextMessage(role=message.role.value, content=message.content)
             for message in _completed_history(previous_messages)[-20:]
@@ -395,8 +430,9 @@ class PersistentLegalConversationService:
                 "history": history,
                 "retrieval": retrieval,
                 "case_memory": case_memory,
+                "event_sink": run_journal,
             }
-            if on_text_delta is None:
+            if on_text_delta is None and self._stream_bridge is None:
                 generated = await self._gateway.converse(turn, **gateway_arguments)
             else:
                 emitted_delta = False
@@ -407,12 +443,20 @@ class PersistentLegalConversationService:
                     }
                 )
 
-                def emit_delta(delta: str) -> None:
+                async def emit_delta(delta: str) -> None:
                     nonlocal emitted_delta
                     filtered = reference_filter.feed(delta)
                     if filtered:
                         emitted_delta = True
-                        on_text_delta(filtered)
+                        if self._stream_bridge is not None:
+                            await _publish_stream_event(
+                                self._stream_bridge,
+                                run_key,
+                                "messages",
+                                {"delta": filtered},
+                            )
+                        if on_text_delta is not None:
+                            await on_text_delta(filtered)
 
                 generated = await self._gateway.converse_stream(
                     turn,
@@ -422,15 +466,31 @@ class PersistentLegalConversationService:
                 tail = reference_filter.flush()
                 if tail:
                     emitted_delta = True
-                    on_text_delta(tail)
+                    if self._stream_bridge is not None:
+                        await _publish_stream_event(
+                            self._stream_bridge,
+                            run_key,
+                            "messages",
+                            {"delta": tail},
+                        )
+                    if on_text_delta is not None:
+                        await on_text_delta(tail)
             content = _strip_unavailable_authority_references(
                 generated.content,
                 {*retrieval.legal_authorities, *retrieval.case_law_authorities},
             )
             if not content.strip():
                 raise RuntimeError("conversation provider returned an empty response")
-            if on_text_delta is not None and not emitted_delta:
-                on_text_delta(content)
+            if (on_text_delta is not None or self._stream_bridge is not None) and not emitted_delta:
+                if self._stream_bridge is not None:
+                    await _publish_stream_event(
+                        self._stream_bridge,
+                        run_key,
+                        "messages",
+                        {"delta": content},
+                    )
+                if on_text_delta is not None:
+                    await on_text_delta(content)
             expected_runtime_thread_id = runtime_thread_id or submission.run_id
             if generated.runtime_thread_id != str(expected_runtime_thread_id):
                 raise RuntimeError("conversation provider changed the runtime thread ID")
@@ -472,21 +532,38 @@ class PersistentLegalConversationService:
             )
             if not completed:
                 raise RunCancelledError("This analysis was cancelled")
+            result = CaseConversationTurnResult(
+                case_id=case_id,
+                thread_id=thread.id,
+                run_id=submission.run_id,
+                assistant_message=content,
+                material_count=len(materials),
+                legal_citations=legal_citations,
+                case_law_citations=case_law_citations,
+                profile_updated=case_memory.updated,
+                case_profile=case_memory.profile,
+            )
+            if self._stream_bridge is not None:
+                await _publish_stream_event(
+                    self._stream_bridge,
+                    run_key,
+                    "complete",
+                    {"result": result.model_dump(mode="json")},
+                )
+            return result
         except BaseException as exc:
             await self._mark_failed(submission.run_id, exc)
+            if self._stream_bridge is not None:
+                await _publish_stream_event(
+                    self._stream_bridge,
+                    run_key,
+                    "error",
+                    _run_stream_error_payload(exc),
+                )
             raise
-
-        return CaseConversationTurnResult(
-            case_id=case_id,
-            thread_id=thread.id,
-            run_id=submission.run_id,
-            assistant_message=content,
-            material_count=len(materials),
-            legal_citations=legal_citations,
-            case_law_citations=case_law_citations,
-            profile_updated=case_memory.updated,
-            case_profile=case_memory.profile,
-        )
+        finally:
+            if self._stream_bridge is not None:
+                await _end_stream(self._stream_bridge, run_key)
 
     async def list_messages(self, case_id: UUID) -> list[CaseConversationMessage]:
         async with self._session_factory() as session:
@@ -628,6 +705,85 @@ def _completed_history(messages: list[ConversationMessage]) -> list[Conversation
         if messages[index].role == ConversationRole.assistant:
             return messages[: index + 1]
     return []
+
+
+def _live_activity_payload(event: ProjectedRunEvent) -> dict[str, object]:
+    payload = dict(event.extension.payload)
+    status = payload.get("status")
+    live_type = {
+        "model.started": "model_started",
+        "model.completed": "model_completed",
+        "model.error": "model_failed",
+        "tool.started": "tool_started",
+        "tool.completed": "tool_completed",
+        "tool.error": "tool_failed",
+        "subagent.start": "task_started",
+        "subagent.step": "task_running",
+        "subagent.end": (
+            "task_completed"
+            if status == "completed"
+            else "task_timed_out"
+            if status == "timed_out"
+            else "task_failed"
+        ),
+    }[event.event_type]
+    return {
+        "type": live_type,
+        "event_type": event.event_type,
+        "content": event.content,
+        **payload,
+    }
+
+
+def _run_stream_error_payload(error: BaseException) -> dict[str, str]:
+    error_type = type(error).__name__
+    if isinstance(error, RunCancelledError):
+        return {
+            "code": "run_cancelled",
+            "message": "分析已取消。",
+            "error_type": error_type,
+        }
+    if error_type == "ModelTemporarilyUnavailableError":
+        return {
+            "code": "provider_unavailable",
+            "message": str(error),
+            "error_type": error_type,
+        }
+    if error_type == "ModelNotConfiguredError":
+        return {
+            "code": "request_rejected",
+            "message": str(error),
+            "error_type": error_type,
+        }
+    return {
+        "code": "run_failed",
+        "message": "分析失败，请稍后重试。",
+        "error_type": error_type,
+    }
+
+
+async def _publish_stream_event(
+    bridge: RunStreamBridge,
+    run_id: str,
+    event: str,
+    data: object,
+) -> None:
+    try:
+        await bridge.publish(run_id, event, data)
+    except Exception:
+        logger.exception(
+            "Lexora stream publication failed",
+            extra={"run_id": run_id, "event": event},
+        )
+
+
+async def _end_stream(bridge: RunStreamBridge, run_id: str) -> None:
+    try:
+        await bridge.publish_end(run_id)
+    except Exception:
+        logger.exception("Lexora stream termination failed", extra={"run_id": run_id})
+        return
+    asyncio.create_task(bridge.cleanup(run_id, delay=60))
 
 
 def _cited_chunks(

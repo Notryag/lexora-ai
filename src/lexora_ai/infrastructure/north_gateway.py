@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
@@ -11,10 +10,11 @@ from north import (
     AppConfig,
     MemoryStreamBridge,
     RunExecutor,
+    RuntimeEventSink,
     RuntimeStreamEvent,
     build_agent,
 )
-from north.runtime import RunManager
+from north.runtime import RunManager, StreamBridge
 from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 
 from lexora_ai.application import (
@@ -28,6 +28,7 @@ from lexora_ai.application import (
     GeneratedCaseAnalysis,
     GeneratedConversationTurn,
 )
+from lexora_ai.application.ports import TextDeltaSink
 from lexora_ai.config import Settings
 from lexora_ai.domain import CaseAnalysisRequest, ConversationTurnRequest
 from lexora_ai.infrastructure.case_analyst import build_case_analyst_subagent
@@ -53,9 +54,16 @@ class ModelTemporarilyUnavailableError(RuntimeError):
 
 
 class NorthCaseAnalysisGateway:
-    def __init__(self, settings: Settings, *, checkpointer=None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        checkpointer=None,
+        stream_bridge: StreamBridge | None = None,
+    ) -> None:
         self._settings = settings
         self._checkpointer = checkpointer
+        self._stream_bridge = stream_bridge or MemoryStreamBridge()
         self._client: AppClient | None = None
 
     async def analyze(
@@ -99,19 +107,24 @@ class NorthCaseAnalysisGateway:
         case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
         retrieval: ConversationRetrievalPort | None = None,
         case_memory: ConversationCaseMemoryPort | None = None,
+        event_sink: RuntimeEventSink | None = None,
     ) -> GeneratedConversationTurn:
+        async def discard_delta(_delta: str) -> None:
+            return None
+
         return await self._run_conversation(
             request,
             thread_id=thread_id,
             run_id=run_id,
             checkpoint_id=checkpoint_id,
-            on_text_delta=lambda _delta: None,
+            on_text_delta=discard_delta,
             history=history,
             evidence=evidence,
             legal_authorities=legal_authorities,
             case_law_authorities=case_law_authorities,
             retrieval=retrieval,
             case_memory=case_memory,
+            event_sink=event_sink,
         )
 
     async def converse_stream(
@@ -121,13 +134,14 @@ class NorthCaseAnalysisGateway:
         thread_id: UUID,
         run_id: UUID | None = None,
         checkpoint_id: str | None = None,
-        on_text_delta: Callable[[str], None],
+        on_text_delta: TextDeltaSink,
         history: tuple[ConversationContextMessage, ...] = (),
         evidence: tuple[ConversationEvidenceChunk, ...] | None = None,
         legal_authorities: tuple[ConversationLegalChunk, ...] = (),
         case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
         retrieval: ConversationRetrievalPort | None = None,
         case_memory: ConversationCaseMemoryPort | None = None,
+        event_sink: RuntimeEventSink | None = None,
     ) -> GeneratedConversationTurn:
         return await self._run_conversation(
             request,
@@ -141,6 +155,7 @@ class NorthCaseAnalysisGateway:
             case_law_authorities=case_law_authorities,
             retrieval=retrieval,
             case_memory=case_memory,
+            event_sink=event_sink,
         )
 
     async def _run_conversation(
@@ -150,13 +165,14 @@ class NorthCaseAnalysisGateway:
         thread_id: UUID,
         run_id: UUID | None,
         checkpoint_id: str | None,
-        on_text_delta: Callable[[str], None],
+        on_text_delta: TextDeltaSink,
         history: tuple[ConversationContextMessage, ...],
         evidence: tuple[ConversationEvidenceChunk, ...] | None,
         legal_authorities: tuple[ConversationLegalChunk, ...],
         case_law_authorities: tuple[ConversationCaseLawChunk, ...],
         retrieval: ConversationRetrievalPort | None,
         case_memory: ConversationCaseMemoryPort | None,
+        event_sink: RuntimeEventSink | None,
     ) -> GeneratedConversationTurn:
         prompt = build_conversation_prompt(
             request,
@@ -180,7 +196,7 @@ class NorthCaseAnalysisGateway:
                 return
             delta = _assistant_text_delta(event.data)
             if delta:
-                on_text_delta(delta)
+                await on_text_delta(delta)
 
         graph_messages = []
         if checkpoint_id is None:
@@ -208,7 +224,7 @@ class NorthCaseAnalysisGateway:
             ]
             if research_tools:
                 subagents.append(build_legal_researcher_subagent(research_tools))
-            result = await RunExecutor(MemoryStreamBridge(), manager).execute(
+            result = await RunExecutor(self._stream_bridge, manager).execute(
                 record,
                 agent_factory=lambda: build_agent(
                     self._get_config(),
@@ -224,7 +240,9 @@ class NorthCaseAnalysisGateway:
                 },
                 context={"thread_id": resolved_thread_id, "run_id": resolved_run_id},
                 stream_observer=observe,
+                event_sink=event_sink,
                 publish_modes=(),
+                publish_lifecycle=False,
             )
         except (APIConnectionError, APITimeoutError, RateLimitError) as exc:
             raise ModelTemporarilyUnavailableError(

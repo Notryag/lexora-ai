@@ -6,6 +6,7 @@ from typing import Annotated
 from agent_platform.core import UserContext
 from fastapi import Depends, Request
 from north import CheckpointerConfig, make_checkpointer
+from north.runtime import StreamBridge
 
 from lexora_ai.application import (
     AnalyzeCaseService,
@@ -27,7 +28,14 @@ from lexora_ai.infrastructure import (
 from lexora_ai.infrastructure.material_parser import parse_material_file
 
 
-async def get_north_gateway(request: Request) -> NorthCaseAnalysisGateway:
+def get_stream_bridge(request: Request) -> StreamBridge:
+    return request.app.state.stream_bridge
+
+
+async def get_north_gateway(
+    request: Request,
+    stream_bridge: Annotated[StreamBridge, Depends(get_stream_bridge)],
+) -> NorthCaseAnalysisGateway:
     existing = getattr(request.app.state, "north_gateway", None)
     if existing is not None:
         return existing
@@ -43,11 +51,14 @@ async def get_north_gateway(request: Request) -> NorthCaseAnalysisGateway:
             )
         )
         checkpointer = await manager.__aenter__()
-        gateway = NorthCaseAnalysisGateway(settings, checkpointer=checkpointer)
+        gateway = NorthCaseAnalysisGateway(
+            settings,
+            checkpointer=checkpointer,
+            stream_bridge=stream_bridge,
+        )
         request.app.state.checkpointer_manager = manager
         request.app.state.north_gateway = gateway
         return gateway
-
 
 @lru_cache(maxsize=1)
 def get_embedding_gateway() -> OpenAIEmbeddingGateway | None:
@@ -120,6 +131,7 @@ def get_case_run_service() -> CaseRunService:
 
 
 def get_persistent_conversation_service(
+    stream_bridge: Annotated[StreamBridge, Depends(get_stream_bridge)],
     gateway: Annotated[NorthCaseAnalysisGateway, Depends(get_north_gateway)],
 ) -> PersistentLegalConversationService:
     return PersistentLegalConversationService(
@@ -129,4 +141,5 @@ def get_persistent_conversation_service(
         get_embedding_gateway(),
         get_legal_knowledge_port(),
         get_case_law_knowledge_port(),
+        stream_bridge,
     )

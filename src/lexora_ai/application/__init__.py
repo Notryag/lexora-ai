@@ -46,6 +46,7 @@ from lexora_ai.application.ports import (
     LegalConversationGateway,
     LegalKnowledgePort,
 )
+from lexora_ai.application.run_journal import ProjectedRunEvent, RunJournal, project_runtime_event
 
 __all__ = [
     "AnalyzeCaseService",
@@ -85,5 +86,8 @@ __all__ = [
     "MaterialNotFoundError",
     "MaterialParseError",
     "PersistentLegalConversationService",
+    "ProjectedRunEvent",
+    "RunJournal",
+    "project_runtime_event",
     "RunCancelledError",
 ]

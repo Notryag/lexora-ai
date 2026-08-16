@@ -4,6 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from north.runtime import MemoryStreamBridge
 
 from lexora_ai import __version__
 from lexora_ai.api.routes import router
@@ -12,9 +13,11 @@ from lexora_ai.api.routes import router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.north_gateway_lock = asyncio.Lock()
+    app.state.stream_bridge = MemoryStreamBridge(max_events=512)
     try:
         yield
     finally:
+        await app.state.stream_bridge.close()
         manager = getattr(app.state, "checkpointer_manager", None)
         if manager is not None:
             await manager.__aexit__(None, None, None)

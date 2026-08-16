@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
@@ -89,6 +89,25 @@ class ConversationCaseMemoryPort(Protocol):
     async def update_profile(self, patch: CaseProfilePatch) -> CaseProfile: ...
 
 
+RuntimeEventSink = Callable[[object], Awaitable[None]]
+TextDeltaSink = Callable[[str], Awaitable[None]]
+
+
+class RunStreamBridge(Protocol):
+    async def publish(
+        self,
+        run_id: str,
+        event: str,
+        data: object,
+        *,
+        namespace: tuple[str, ...] = (),
+    ) -> None: ...
+
+    async def publish_end(self, run_id: str) -> None: ...
+
+    async def cleanup(self, run_id: str, *, delay: float = 0) -> None: ...
+
+
 class FollowUpReviewerPort(Protocol):
     async def review(
         self,
@@ -132,6 +151,7 @@ class LegalConversationGateway(Protocol):
         case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
         retrieval: ConversationRetrievalPort | None = None,
         case_memory: ConversationCaseMemoryPort | None = None,
+        event_sink: RuntimeEventSink | None = None,
     ) -> GeneratedConversationTurn: ...
 
     async def converse_stream(
@@ -141,13 +161,14 @@ class LegalConversationGateway(Protocol):
         thread_id: UUID,
         run_id: UUID | None = None,
         checkpoint_id: str | None = None,
-        on_text_delta: Callable[[str], None],
+        on_text_delta: TextDeltaSink,
         history: tuple[ConversationContextMessage, ...] = (),
         evidence: tuple[ConversationEvidenceChunk, ...] | None = None,
         legal_authorities: tuple[ConversationLegalChunk, ...] = (),
         case_law_authorities: tuple[ConversationCaseLawChunk, ...] = (),
         retrieval: ConversationRetrievalPort | None = None,
         case_memory: ConversationCaseMemoryPort | None = None,
+        event_sink: RuntimeEventSink | None = None,
     ) -> GeneratedConversationTurn: ...
 
 

@@ -96,6 +96,7 @@ export function LexoraWorkspace() {
             text: `${current?.text ?? ""}${delta}`,
           }));
         },
+        undefined,
         controller.signal,
       );
     },

@@ -8,7 +8,18 @@ from typing import Annotated
 from uuid import UUID
 
 from agent_platform.core import ActiveThreadRunError
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
+from north.runtime import END_SENTINEL, HEARTBEAT_SENTINEL, REPLAY_GAP_EVENT, StreamBridge
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
@@ -62,11 +73,38 @@ from .dependencies import (
     get_legal_conversation_service,
     get_legal_source_service,
     get_persistent_conversation_service,
+    get_stream_bridge,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1")
+
+
+def _sse_frame(event: str, data: object, *, event_id: str | None = None) -> str:
+    lines = []
+    if event_id:
+        lines.append(f"id: {event_id}")
+    lines.append(f"event: {event}")
+    lines.append(
+        "data: "
+        + json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    )
+    return "\n".join(lines) + "\n\n"
+
+
+def _pre_run_stream_error(error: BaseException) -> dict[str, str]:
+    if isinstance(error, RunCancelledError):
+        return {"code": "run_cancelled", "message": "分析已取消。"}
+    if isinstance(error, ModelTemporarilyUnavailableError):
+        return {"code": "provider_unavailable", "message": str(error)}
+    if isinstance(error, (CaseNotFoundError, ModelNotConfiguredError, ActiveThreadRunError)):
+        return {"code": "request_rejected", "message": str(error)}
+    logger.error(
+        "Case conversation stream failed before Run creation",
+        extra={"error_type": type(error).__name__},
+    )
+    return {"code": "internal_error", "message": "分析失败，请稍后重试。"}
 
 
 class HealthResponse(BaseModel):
@@ -396,67 +434,67 @@ async def create_case_conversation_turn(
 async def stream_case_conversation_turn(
     case_id: UUID,
     request: CaseConversationTurnRequest,
+    http_request: Request,
     service: Annotated[
         PersistentLegalConversationService,
         Depends(get_persistent_conversation_service),
     ],
+    stream_bridge: Annotated[StreamBridge, Depends(get_stream_bridge)],
+    last_event_id: str | None = Header(
+        default=None,
+        alias="Last-Event-ID",
+        pattern=r"^\d{1,20}-\d{1,20}$",
+        max_length=41,
+    ),
 ) -> StreamingResponse:
     async def event_stream():
-        queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+        started: asyncio.Future[UUID] = asyncio.get_running_loop().create_future()
 
-        def publish_delta(delta: str) -> None:
-            queue.put_nowait(("delta", delta))
+        async def publish_started(run_id: UUID) -> None:
+            if not started.done():
+                started.set_result(run_id)
 
         async def execute() -> None:
             try:
-                result = await service.execute(
+                await service.execute(
                     case_id,
                     request,
-                    on_text_delta=publish_delta,
+                    on_run_started=publish_started,
                 )
-                await queue.put(("complete", result))
-            except RunCancelledError:
-                await queue.put(
-                    ("error", {"code": "run_cancelled", "message": "分析已取消。"})
-                )
-            except ModelTemporarilyUnavailableError as exc:
-                await queue.put(
-                    (
-                        "error",
-                        {"code": "provider_unavailable", "message": str(exc)},
-                    )
-                )
-            except (CaseNotFoundError, ModelNotConfiguredError, ActiveThreadRunError) as exc:
-                await queue.put(
-                    ("error", {"code": "request_rejected", "message": str(exc)})
-                )
-            except Exception:
+            except BaseException as exc:
+                if not started.done():
+                    started.set_exception(exc)
+                    return
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
                 logger.exception("Case conversation stream failed", extra={"case_id": str(case_id)})
-                await queue.put(
-                    (
-                        "error",
-                        {"code": "internal_error", "message": "分析失败，请稍后重试。"},
-                    )
-                )
-            finally:
-                await queue.put(("end", None))
 
         task = asyncio.create_task(execute())
         try:
-            while True:
-                event_type, payload = await queue.get()
-                if event_type == "end":
-                    break
-                if event_type == "complete":
-                    data = {
-                        "type": "complete",
-                        "result": payload.model_dump(mode="json"),
-                    }
-                elif event_type == "delta":
-                    data = {"type": "delta", "delta": payload}
-                else:
-                    data = {"type": "error", **payload}
-                yield json.dumps(data, ensure_ascii=False, separators=(",", ":")) + "\n"
+            try:
+                run_id = await started
+            except BaseException as exc:
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+                yield _sse_frame("error", _pre_run_stream_error(exc))
+                return
+
+            async for entry in stream_bridge.subscribe(
+                str(run_id),
+                last_event_id=last_event_id,
+            ):
+                if await http_request.is_disconnected():
+                    return
+                if entry == HEARTBEAT_SENTINEL:
+                    yield ": keep-alive\n\n"
+                    continue
+                if entry == END_SENTINEL:
+                    yield _sse_frame("end", {})
+                    return
+                if entry.event == REPLAY_GAP_EVENT:
+                    yield _sse_frame("gap", entry.data)
+                    continue
+                yield _sse_frame(entry.event, entry.data, event_id=entry.id)
         finally:
             if not task.done():
                 task.cancel()
@@ -465,7 +503,7 @@ async def stream_case_conversation_turn(
 
     return StreamingResponse(
         event_stream(),
-        media_type="application/x-ndjson",
+        media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache, no-transform",
             "X-Accel-Buffering": "no",

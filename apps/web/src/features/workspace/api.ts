@@ -118,21 +118,24 @@ export async function listMessages(caseId: string): Promise<PersistedMessage[]> 
   return requireData(data, error);
 }
 
-type ConversationStreamEvent =
-  | { type: "delta"; delta: string }
-  | { type: "complete"; result: CaseConversationTurnResult }
-  | { type: "error"; code?: string; message: string };
+export type ConversationStreamActivity = {
+  type: string;
+  event_type?: string;
+  content?: string | null;
+  [key: string]: unknown;
+};
 
 export async function streamCaseMessage(
   caseId: string,
   message: string,
   onDelta: (delta: string) => void,
+  onActivity?: (activity: ConversationStreamActivity) => void,
   signal?: AbortSignal,
 ): Promise<CaseConversationTurnResult> {
   const response = await fetch(`/api/v1/cases/${caseId}/messages/stream`, {
     method: "POST",
     headers: {
-      Accept: "application/x-ndjson",
+      Accept: "text/event-stream",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ message }),
@@ -148,13 +151,43 @@ export async function streamCaseMessage(
   const decoder = new TextDecoder();
   let buffer = "";
   let result: CaseConversationTurnResult | null = null;
+  let eventName = "message";
+  let eventData: string[] = [];
+
+  function consumeFrame() {
+    if (!eventData.length) {
+      eventName = "message";
+      return;
+    }
+    const data = JSON.parse(eventData.join("\n")) as Record<string, unknown>;
+    if (eventName === "messages" && typeof data.delta === "string") {
+      onDelta(data.delta);
+    } else if (eventName === "custom" && onActivity) {
+      onActivity(data as ConversationStreamActivity);
+    } else if (eventName === "complete") {
+      result = data.result as CaseConversationTurnResult;
+    } else if (eventName === "error" || eventName === "gap") {
+      throw new Error(
+        typeof data.message === "string" ? data.message : "分析流已中断，请重试。",
+      );
+    }
+    eventName = "message";
+    eventData = [];
+  }
 
   function consumeLine(line: string) {
-    if (!line.trim()) return;
-    const event = JSON.parse(line) as ConversationStreamEvent;
-    if (event.type === "delta") onDelta(event.delta);
-    if (event.type === "complete") result = event.result;
-    if (event.type === "error") throw new Error(event.message);
+    if (!line.trim()) {
+      consumeFrame();
+      return;
+    }
+    if (line.startsWith(":")) return;
+    if (line.startsWith("event:")) {
+      eventName = line.slice(6).trim() || "message";
+      return;
+    }
+    if (line.startsWith("data:")) {
+      eventData.push(line.slice(5).trimStart());
+    }
   }
 
   while (true) {
@@ -165,7 +198,8 @@ export async function streamCaseMessage(
     lines.forEach(consumeLine);
     if (done) break;
   }
-  consumeLine(buffer);
+  if (buffer) consumeLine(buffer);
+  consumeFrame();
   if (!result) throw new Error("分析响应提前结束，请重试。");
   return result;
 }

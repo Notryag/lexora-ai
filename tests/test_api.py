@@ -4,12 +4,14 @@ import json
 from uuid import UUID
 
 from fastapi.testclient import TestClient
+from north.runtime import MemoryStreamBridge
 
 from lexora_ai.api.app import create_app
 from lexora_ai.api.dependencies import (
     get_analyze_case_service,
     get_legal_conversation_service,
     get_persistent_conversation_service,
+    get_stream_bridge,
 )
 from lexora_ai.application import (
     AnalyzeCaseService,
@@ -64,23 +66,64 @@ class UnconfiguredGateway:
 
 
 class FakePersistentConversationService:
-    async def execute(self, case_id, request, *, on_text_delta=None):
-        if on_text_delta is not None:
-            on_text_delta("你")
-            on_text_delta("好")
-        return CaseConversationTurnResult(
+    def __init__(self, bridge: MemoryStreamBridge) -> None:
+        self.bridge = bridge
+
+    async def execute(self, case_id, request, *, on_text_delta=None, on_run_started=None):
+        del on_text_delta
+        result = CaseConversationTurnResult(
             case_id=case_id,
             thread_id=UUID("018f6f7c-3500-7c4a-83e7-64dd8aa83293"),
             run_id=UUID("018f6f7c-3500-7c4a-83e7-64dd8aa83294"),
             assistant_message=f"你好，已收到：{request.message}",
             material_count=0,
         )
+        if on_run_started is not None:
+            await on_run_started(result.run_id)
+        run_id = str(result.run_id)
+        await self.bridge.publish(
+            run_id,
+            "metadata",
+            {"run_id": run_id, "thread_id": str(result.thread_id)},
+        )
+        await self.bridge.publish(run_id, "messages", {"delta": "你"})
+        await self.bridge.publish(run_id, "messages", {"delta": "好"})
+        await self.bridge.publish(
+            run_id,
+            "complete",
+            {"result": result.model_dump(mode="json")},
+        )
+        await self.bridge.publish_end(run_id)
+        return result
 
 
 class UnavailablePersistentConversationService:
-    async def execute(self, case_id, request, *, on_text_delta=None):
-        del case_id, request, on_text_delta
+    async def execute(
+        self,
+        case_id,
+        request,
+        *,
+        on_text_delta=None,
+        on_run_started=None,
+    ):
+        del case_id, request, on_text_delta, on_run_started
         raise ModelTemporarilyUnavailableError("模型服务暂时不可用，请稍后重试。")
+
+
+def parse_sse(text: str) -> list[dict[str, object]]:
+    events = []
+    for frame in text.strip().split("\n\n"):
+        event: dict[str, object] = {}
+        for line in frame.splitlines():
+            if line.startswith("id: "):
+                event["id"] = line[4:]
+            elif line.startswith("event: "):
+                event["event"] = line[7:]
+            elif line.startswith("data: "):
+                event["data"] = json.loads(line[6:])
+        if event:
+            events.append(event)
+    return events
 
 
 def build_client() -> TestClient:
@@ -102,8 +145,10 @@ def test_health() -> None:
 
 def test_case_conversation_stream_returns_deltas_and_completion() -> None:
     app = create_app()
-    app.dependency_overrides[get_persistent_conversation_service] = (
-        FakePersistentConversationService
+    bridge = MemoryStreamBridge()
+    app.dependency_overrides[get_stream_bridge] = lambda: bridge
+    app.dependency_overrides[get_persistent_conversation_service] = lambda: (
+        FakePersistentConversationService(bridge)
     )
     case_id = "018f6f7c-3500-7c4a-83e7-64dd8aa83291"
 
@@ -113,18 +158,27 @@ def test_case_conversation_stream_returns_deltas_and_completion() -> None:
     )
 
     assert response.status_code == 200
-    assert response.headers["content-type"].startswith("application/x-ndjson")
-    events = [json.loads(line) for line in response.text.splitlines()]
-    assert events[0] == {"type": "delta", "delta": "你"}
-    assert events[1] == {"type": "delta", "delta": "好"}
-    assert events[2]["type"] == "complete"
-    assert events[2]["result"]["assistant_message"] == "你好，已收到：hi"
-    assert events[2]["result"]["profile_updated"] is False
-    assert events[2]["result"]["case_profile"]["key_facts"] == []
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = parse_sse(response.text)
+    assert [event["event"] for event in events] == [
+        "metadata",
+        "messages",
+        "messages",
+        "complete",
+        "end",
+    ]
+    assert events[1]["data"] == {"delta": "你"}
+    assert events[2]["data"] == {"delta": "好"}
+    result = events[3]["data"]["result"]
+    assert result["assistant_message"] == "你好，已收到：hi"
+    assert result["profile_updated"] is False
+    assert result["case_profile"]["key_facts"] == []
 
 
 def test_case_conversation_stream_classifies_provider_unavailability() -> None:
     app = create_app()
+    bridge = MemoryStreamBridge()
+    app.dependency_overrides[get_stream_bridge] = lambda: bridge
     app.dependency_overrides[get_persistent_conversation_service] = (
         UnavailablePersistentConversationService
     )
@@ -136,11 +190,13 @@ def test_case_conversation_stream_classifies_provider_unavailability() -> None:
     )
 
     assert response.status_code == 200
-    assert [json.loads(line) for line in response.text.splitlines()] == [
+    assert parse_sse(response.text) == [
         {
-            "type": "error",
-            "code": "provider_unavailable",
-            "message": "模型服务暂时不可用，请稍后重试。",
+            "event": "error",
+            "data": {
+                "code": "provider_unavailable",
+                "message": "模型服务暂时不可用，请稍后重试。",
+            },
         }
     ]
 

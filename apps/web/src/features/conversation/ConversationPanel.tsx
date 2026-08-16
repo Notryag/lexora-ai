@@ -1,21 +1,27 @@
 "use client";
 
 import {
+  Activity,
   BookOpenCheck,
   BookOpenText,
+  Check,
   ClipboardList,
   CircleCheck,
+  CircleAlert,
   ChevronDown,
   Download,
   ExternalLink,
+  LoaderCircle,
   Scale,
   SendHorizontal,
   Square,
+  Users,
+  Wrench,
 } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 
-import type { ChatMessage } from "./types";
+import type { ChatMessage, ConversationStreamActivity } from "./types";
 import {
   citationMarkers,
   citedSources,
@@ -32,6 +38,7 @@ type ConversationPanelProps = {
   profileItemCount: number;
   profileUpdated: boolean;
   messages: ChatMessage[];
+  activities: ConversationStreamActivity[];
   onCaseTitleChange: (value: string) => void;
   onCaseTitleCommit: () => void;
   onOpenMaterials: () => void;
@@ -50,6 +57,7 @@ export function ConversationPanel({
   profileItemCount,
   profileUpdated,
   messages,
+  activities,
   onCaseTitleChange,
   onCaseTitleCommit,
   onOpenMaterials,
@@ -232,6 +240,51 @@ export function ConversationPanel({
             );
           })}
 
+          {activities.length ? (
+            <section className={styles.activityTimeline} aria-label="分析过程" aria-live="polite">
+              <div className={styles.activityHeader}>
+                <Activity aria-hidden="true" size={15} />
+                <span>分析过程</span>
+              </div>
+              <ol className={styles.activityList}>
+                {activities.map((activity, index) => {
+                  const terminal = activity.type === "task_completed"
+                    || activity.type === "task_failed"
+                    || activity.type === "task_timed_out"
+                    || activity.type === "tool_completed"
+                    || activity.type === "tool_failed";
+                  const failed = activity.type === "task_failed"
+                    || activity.type === "task_timed_out"
+                    || activity.type === "tool_failed"
+                    || activity.type === "model_failed";
+                  const DetailIcon = activity.type.startsWith("task_") ? Users
+                    : activity.type.startsWith("tool_") ? Wrench
+                      : Activity;
+                  const detail = activity.subagent_type || activity.tool_name;
+                  return (
+                    <li
+                      className={`${styles.activityItem} ${terminal ? styles.activityItemTerminal : ""}`}
+                      key={`${activity.event_type ?? activity.type}-${activity.task_id ?? activity.tool_name ?? index}-${index}`}
+                    >
+                      <span className={`${styles.activityIcon} ${failed ? styles.activityIconFailed : ""}`}>
+                        {failed ? <CircleAlert aria-hidden="true" size={14} />
+                          : terminal ? <Check aria-hidden="true" size={14} />
+                            : <LoaderCircle aria-hidden="true" className={styles.activitySpinner} size={14} />}
+                      </span>
+                      <span className={styles.activityText}>{activityLabel(activity.type)}</span>
+                      {detail ? (
+                        <span className={styles.activityDetail}>
+                          <DetailIcon aria-hidden="true" size={12} />
+                          {detail}
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
+          ) : null}
+
           {isSubmitting && messages.at(-1)?.role !== "assistant" ? (
             <article className={`${styles.message} ${styles.assistant}`} aria-label="正在分析">
               <div className={styles.assistantMark} aria-hidden="true">析</div>
@@ -286,4 +339,20 @@ export function ConversationPanel({
       </div>
     </section>
   );
+}
+
+function activityLabel(type: string): string {
+  return {
+    model_started: "正在分析",
+    model_completed: "分析步骤已完成",
+    model_failed: "分析过程失败",
+    tool_started: "正在调用工具",
+    tool_completed: "工具调用已完成",
+    tool_failed: "工具调用失败",
+    task_started: "正在执行子任务",
+    task_running: "子任务处理中",
+    task_completed: "子任务已完成",
+    task_failed: "子任务执行失败",
+    task_timed_out: "子任务超时",
+  }[type] ?? "正在处理案件";
 }

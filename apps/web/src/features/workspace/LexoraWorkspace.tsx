@@ -10,7 +10,11 @@ import {
   citedSources,
   presentAssistantText,
 } from "@/features/conversation/citationPresentation";
-import type { CaseMaterial, ChatMessage } from "@/features/conversation/types";
+import type {
+  CaseMaterial,
+  ChatMessage,
+  ConversationStreamActivity,
+} from "@/features/conversation/types";
 import { MaterialPanel } from "@/features/materials/MaterialPanel";
 
 import {
@@ -44,6 +48,7 @@ export function LexoraWorkspace() {
   const [caseTitle, setCaseTitle] = useState("");
   const [pendingUserMessage, setPendingUserMessage] = useState<ChatMessage | null>(null);
   const [pendingAssistantMessage, setPendingAssistantMessage] = useState<ChatMessage | null>(null);
+  const [activities, setActivities] = useState<ConversationStreamActivity[]>([]);
   const [materialPanelOpen, setMaterialPanelOpen] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const [profileUpdated, setProfileUpdated] = useState(false);
@@ -96,7 +101,9 @@ export function LexoraWorkspace() {
             text: `${current?.text ?? ""}${delta}`,
           }));
         },
-        undefined,
+        (activity) => {
+          setActivities((current) => [...current, activity].slice(-12));
+        },
         controller.signal,
       );
     },
@@ -213,6 +220,7 @@ export function LexoraWorkspace() {
     if (conversation.isPending) return;
     setPendingUserMessage({ id: crypto.randomUUID(), role: "user", text: message });
     setPendingAssistantMessage(null);
+    setActivities([]);
     setProfileUpdated(false);
     conversation.mutate({ message });
   }
@@ -255,6 +263,7 @@ export function LexoraWorkspace() {
     setCaseTitle("");
     setPendingUserMessage(null);
     setPendingAssistantMessage(null);
+    setActivities([]);
     setMaterialPanelOpen(false);
     setProfilePanelOpen(false);
     setProfileUpdated(false);
@@ -301,6 +310,7 @@ export function LexoraWorkspace() {
                 setDraftMode(false);
                 setPendingUserMessage(null);
                 setPendingAssistantMessage(null);
+                setActivities([]);
                 setProfileUpdated(false);
                 conversation.reset();
                 setProfilePanelOpen(false);
@@ -335,6 +345,7 @@ export function LexoraWorkspace() {
         profileItemCount={profileItemCount}
         profileUpdated={profileUpdated}
         messages={messages}
+        activities={activities}
         onCaseTitleChange={setCaseTitle}
         onCaseTitleCommit={() => void titleMutation.mutate()}
         onExport={exportCaseRecord}

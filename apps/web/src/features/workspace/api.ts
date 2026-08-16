@@ -1,5 +1,8 @@
 import { apiClient, apiErrorMessage } from "@/lib/api/client";
 import type { components } from "@/lib/api/schema";
+import type { ConversationStreamActivity } from "@/features/conversation/types";
+
+export type { ConversationStreamActivity } from "@/features/conversation/types";
 
 export type LegalCase = components["schemas"]["LegalCase"];
 type ApiCaseProfile = components["schemas"]["CaseProfile"];
@@ -117,13 +120,6 @@ export async function listMessages(caseId: string): Promise<PersistedMessage[]> 
   });
   return requireData(data, error);
 }
-
-export type ConversationStreamActivity = {
-  type: string;
-  event_type?: string;
-  content?: string | null;
-  [key: string]: unknown;
-};
 
 export async function streamCaseMessage(
   caseId: string,

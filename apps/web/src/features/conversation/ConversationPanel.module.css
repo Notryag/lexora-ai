@@ -307,6 +307,85 @@
   animation-delay: 240ms;
 }
 
+.activityTimeline {
+  margin: 0 0 var(--space-5) 42px;
+  padding: 10px 0 1px;
+  border-top: 1px solid var(--lexora-border);
+  border-bottom: 1px solid var(--lexora-border);
+}
+
+.activityHeader {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--lexora-text-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.activityList {
+  display: grid;
+  gap: 7px;
+  margin: 9px 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.activityItem {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: var(--lexora-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.activityItemTerminal {
+  color: var(--lexora-text);
+}
+
+.activityIcon {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--lexora-primary-soft);
+  color: var(--lexora-primary);
+}
+
+.activityIconFailed {
+  background: var(--lexora-danger-soft);
+  color: var(--lexora-danger);
+}
+
+.activitySpinner {
+  animation: activity-spin 900ms linear infinite;
+}
+
+.activityText {
+  min-width: 0;
+}
+
+.activityDetail {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  color: var(--lexora-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes activity-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .composerDock {
   padding: var(--space-3) var(--space-6) max(var(--space-3), env(safe-area-inset-bottom));
   background: var(--lexora-raised);
@@ -470,10 +549,18 @@
   .messageBody {
     max-width: calc(100% - 38px);
   }
+
+  .activityTimeline {
+    margin-left: 38px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .thinking span {
+    animation-duration: 1800ms;
+  }
+
+  .activitySpinner {
     animation-duration: 1800ms;
   }
 }

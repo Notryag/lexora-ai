@@ -4,13 +4,13 @@ import argparse
 import asyncio
 import json
 from dataclasses import asdict, dataclass
-from importlib.resources import files
 from pathlib import Path
-from uuid import NAMESPACE_URL, uuid5
+from uuid import uuid5
 
+from lexora_ai.api.dependencies import get_session_factory
+from lexora_ai.application.case_law_sources import CaseLawSourceService
 from lexora_ai.case_law_context import rank_case_law, split_case_law
-from lexora_ai.domain import CaseLawChunk
-from lexora_ai.infrastructure import SpcGuidingCaseConnector
+from lexora_ai.domain import CaseLawChunk, CaseLawStatus, LegalSourceReviewStatus
 
 DEFAULT_CASES_PATH = Path(__file__).resolve().parents[3] / "evaluation/case_law_retrieval.jsonl"
 
@@ -85,23 +85,25 @@ def _load_cases(path: Path) -> list[EvaluationCase]:
 
 
 async def _load_corpus() -> list[CaseLawChunk]:
-    urls = json.loads(
-        files("lexora_ai.resources").joinpath("case_law_sources.json").read_text(encoding="utf-8")
-    )
-    connector = SpcGuidingCaseConnector()
+    service = CaseLawSourceService(get_session_factory())
+    summaries = [
+        source
+        for source in await service.list()
+        if source.status == CaseLawStatus.active
+        and source.review_status == LegalSourceReviewStatus.approved
+    ]
     result: list[CaseLawChunk] = []
-    for source_url in urls:
-        source = await connector.fetch(source_url)
-        source_id = uuid5(NAMESPACE_URL, source.source_url)
+    for summary in summaries:
+        source = await service.get(summary.id)
         for index, draft in enumerate(
-            split_case_law(source_id, source.title, source.content),
+            split_case_law(source.id, source.title, source.content),
             start=1,
         ):
             result.append(
                 CaseLawChunk(
-                    id=uuid5(source_id, str(index)),
-                    source_id=source_id,
-                    reference=f"C{source_id.hex}:S{index}",
+                    id=uuid5(source.id, str(index)),
+                    source_id=source.id,
+                    reference=f"C{source.id.hex}:S{index}",
                     section_label=draft.section_label,
                     case_number=source.case_number,
                     title=source.title,

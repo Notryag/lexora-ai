@@ -5,8 +5,10 @@ from lexora_ai.application.case_context import CaseContextService
 from lexora_ai.application.case_law_sources import CaseLawSourceService
 from lexora_ai.application.case_law_sync import (
     CaseLawConnector,
+    CaseLawSourceLocator,
     CaseLawSyncResult,
     CaseLawSyncService,
+    parse_case_law_manifest,
 )
 from lexora_ai.application.case_runs import CaseRunService
 from lexora_ai.application.case_workspace import CaseWorkspaceService
@@ -53,10 +55,12 @@ __all__ = [
     "ActiveCaseRunNotFoundError",
     "CaseAnalysisGateway",
     "CaseLawConnector",
+    "CaseLawSourceLocator",
     "CaseLawKnowledgePort",
     "CaseLawSourceService",
     "CaseLawSyncResult",
     "CaseLawSyncService",
+    "parse_case_law_manifest",
     "CaseRunService",
     "CaseNotFoundError",
     "CaseWorkspaceService",

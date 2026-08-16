@@ -5,3 +5,8 @@
 {"id":"telecom-expiry-notice","query":"运营商给充值余额设置有效期但没有向消费者告知，是否构成违约？","expected_case_number":"指导案例64号","expected_evidence":"未向消费者告知"}
 {"id":"cooperation-employment","query":"公司与个人签合作经营协议但实际进行考勤管理并按月发工资，能否确认劳动关系？","expected_case_number":"指导案例179号","expected_evidence":"双方签订的合作协议"}
 {"id":"platform-driver-employment","query":"代驾平台只进行必要运营管理，司机自主决定是否接单，是否存在劳动关系？","expected_case_number":"指导性案例240号","expected_evidence":"不属于支配性劳动管理"}
+{"id":"bigamy-spousal-cohabitation","query":"对方还没离婚，却隐瞒婚姻状态和我长期以夫妻名义生活并生了孩子，会构成重婚吗？","expected_case_number":"最高法典型案例 2024-11-25 案例四","expected_evidence":"已有配偶又与他人以夫妻名义同居生活"}
+{"id":"premarital-home-added-name","query":"一方把婚前购买的房子在婚后加上配偶名字，离婚时房屋一定平均分吗？","expected_case_number":"最高法典型案例 2025-01-15 案例一","expected_evidence":"酌定崔某某可分得房屋折价款120万元"}
+{"id":"parents-funded-home","query":"父母全款买房后登记到夫妻双方名下，结婚时间很短就离婚，房子怎么分？","expected_case_number":"最高法典型案例 2025-01-15 案例二","expected_evidence":"酌定许某某补偿范某某7万元"}
+{"id":"hidden-marital-assets","query":"配偶在离婚前把夫妻共同存款转给亲属并说不清去向，分财产时能让他少分吗？","expected_case_number":"指导案例66号","expected_evidence":"存在转移、隐藏夫妻共同财产的情节"}
+{"id":"affair-gift-return","query":"丈夫把夫妻共同财产转给婚外第三者，另一方能要求第三者全部返还吗？","expected_case_number":"最高法典型案例 2025-01-15 案例四","expected_evidence":"叶某某应当返还实际收取的款项"}

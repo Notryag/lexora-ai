@@ -9,5 +9,14 @@
   "https://www.court.gov.cn/shenpan/xiangqing/450751.html",
   "https://www.court.gov.cn/zixun/xiangqing/452231.html",
   "https://www.court.gov.cn/zixun/xiangqing/469681.html",
-  "https://www.court.gov.cn/zixun/xiangqing/476081.html"
+  "https://www.court.gov.cn/zixun/xiangqing/476081.html",
+  "https://www.court.gov.cn/shenpan/xiangqing/27821.html",
+  {
+    "url": "https://www.court.gov.cn/zixun/xiangqing/448541.html",
+    "case_ordinals": [4]
+  },
+  {
+    "url": "https://www.court.gov.cn/zixun/xiangqing/452761.html",
+    "case_ordinals": [1, 2, 4]
+  }
 ]

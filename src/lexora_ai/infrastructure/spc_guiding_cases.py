@@ -7,11 +7,26 @@ from html.parser import HTMLParser
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from lexora_ai.application.case_law_sync import CaseLawSourceLocator
 from lexora_ai.domain import CaseLawSourceCreate, CaseLawStatus, LegalSourceReviewStatus
 
 _CASE_NUMBER_RE = re.compile(r"指导性?案例\d+号")
 _REFERENCE_CASE_NUMBER_RE = re.compile(r"入库编号\s*[-：:]?\s*(\d{4}(?:-\d+){4})")
 _PUBLISHED_RE = re.compile(r"发布时间[：:]\s*(\d{4}-\d{2}-\d{2})")
+_TYPICAL_CASE_HEADING_RE = re.compile(r"^案例([一二三四五六七八九十]+)\s*[：:]\s*(.+)$")
+_TYPICAL_SECTION_RE = re.compile(r"^[〖【\[]\s*(基本案情|裁判结果|典型意义)\s*[〗】\]]$")
+_CHINESE_ORDINALS = {
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+}
 _SECTION_LABELS = (
     "裁判要点",
     "裁判要旨",
@@ -19,6 +34,7 @@ _SECTION_LABELS = (
     "基本案情",
     "裁判结果",
     "裁判理由",
+    "典型意义",
     "关联索引",
 )
 
@@ -98,12 +114,23 @@ class _GuidingCaseHtmlParser(HTMLParser):
 
 
 class SpcGuidingCaseConnector:
-    async def fetch(self, source_url: str) -> CaseLawSourceCreate:
-        self._validate_url(source_url)
-        html = await asyncio.to_thread(self._download, source_url)
-        return self.parse(source_url, html)
+    async def fetch(self, locator: CaseLawSourceLocator) -> list[CaseLawSourceCreate]:
+        self._validate_url(locator.source_url)
+        html = await asyncio.to_thread(self._download, locator.source_url)
+        return self.parse_many(locator, html)
 
     def parse(self, source_url: str, html: str) -> CaseLawSourceCreate:
+        documents = self.parse_many(CaseLawSourceLocator(source_url=source_url), html)
+        if len(documents) != 1:
+            raise SpcGuidingCaseError("expected one official case")
+        return documents[0]
+
+    def parse_many(
+        self,
+        locator: CaseLawSourceLocator,
+        html: str,
+    ) -> list[CaseLawSourceCreate]:
+        source_url = locator.source_url
         self._validate_url(source_url)
         parser = _GuidingCaseHtmlParser()
         parser.feed(html)
@@ -111,6 +138,14 @@ class SpcGuidingCaseConnector:
         page_title = re.sub(r"\s+", " ", "".join(parser.title_parts)).strip()
         if not page_title or not parser.paragraphs:
             raise SpcGuidingCaseError("official guiding-case page has no readable case content")
+
+        if locator.case_ordinals:
+            return self._parse_typical_cases(
+                source_url=source_url,
+                meta_parts=parser.meta_parts,
+                paragraphs=parser.paragraphs,
+                selected_ordinals=locator.case_ordinals,
+            )
 
         page_and_content = "\n".join((page_title, *parser.paragraphs))
         guiding_case_match = _CASE_NUMBER_RE.search(page_and_content)
@@ -136,18 +171,114 @@ class SpcGuidingCaseConnector:
         published_match = _PUBLISHED_RE.search(meta)
         published_on = date.fromisoformat(published_match.group(1)) if published_match else None
         content, keywords = self._normalize_content(parser.paragraphs)
-        return CaseLawSourceCreate(
-            case_number=case_number,
-            title=title,
-            keywords=keywords,
-            issuing_authority="最高人民法院",
-            status=CaseLawStatus.active,
-            published_on=published_on,
-            source_name=source_name,
-            source_url=source_url,
-            content=content,
-            review_status=LegalSourceReviewStatus.pending,
-        )
+        return [
+            CaseLawSourceCreate(
+                case_number=case_number,
+                title=title,
+                keywords=keywords,
+                issuing_authority="最高人民法院",
+                status=CaseLawStatus.active,
+                published_on=published_on,
+                source_name=source_name,
+                source_url=source_url,
+                content=content,
+                review_status=LegalSourceReviewStatus.pending,
+            )
+        ]
+
+    def _parse_typical_cases(
+        self,
+        *,
+        source_url: str,
+        meta_parts: list[str],
+        paragraphs: list[str],
+        selected_ordinals: tuple[int, ...],
+    ) -> list[CaseLawSourceCreate]:
+        meta = re.sub(r"\s+", " ", "".join(meta_parts))
+        published_match = _PUBLISHED_RE.search(meta)
+        if published_match is None:
+            raise SpcGuidingCaseError("typical-case publication date was not found")
+        published_on = date.fromisoformat(published_match.group(1))
+        cases = self._split_typical_cases(paragraphs)
+        missing = [ordinal for ordinal in selected_ordinals if ordinal not in cases]
+        if missing:
+            rendered = ", ".join(str(ordinal) for ordinal in missing)
+            raise SpcGuidingCaseError(f"selected typical cases were not found: {rendered}")
+
+        results: list[CaseLawSourceCreate] = []
+        for ordinal in selected_ordinals:
+            heading, body = cases[ordinal]
+            ordinal_label = next(
+                label for label, value in _CHINESE_ORDINALS.items() if value == ordinal
+            )
+            title = self._typical_case_title(heading)
+            content = self._normalize_typical_case(title, body)
+            results.append(
+                CaseLawSourceCreate(
+                    case_number=(
+                        f"最高法典型案例 {published_on.isoformat()} 案例{ordinal_label}"
+                    ),
+                    title=title,
+                    keywords=[],
+                    issuing_authority="最高人民法院",
+                    status=CaseLawStatus.active,
+                    published_on=published_on,
+                    source_name="最高人民法院典型案例",
+                    source_url=source_url,
+                    content=content,
+                    review_status=LegalSourceReviewStatus.pending,
+                )
+            )
+        return results
+
+    @staticmethod
+    def _split_typical_cases(
+        paragraphs: list[str],
+    ) -> dict[int, tuple[str, list[str]]]:
+        result: dict[int, tuple[str, list[str]]] = {}
+        for index, paragraph in enumerate(paragraphs):
+            match = _TYPICAL_CASE_HEADING_RE.match(paragraph.strip())
+            if match is None or index + 1 >= len(paragraphs):
+                continue
+            if _TYPICAL_SECTION_RE.match(paragraphs[index + 1].strip()) is None:
+                continue
+            ordinal = _CHINESE_ORDINALS.get(match.group(1))
+            if ordinal is None:
+                continue
+            body: list[str] = []
+            for following in paragraphs[index + 1 :]:
+                following = following.strip()
+                if _TYPICAL_CASE_HEADING_RE.match(following) or following.startswith(
+                    "责任编辑"
+                ):
+                    break
+                body.append(following)
+            result[ordinal] = (match.group(2).strip(), body)
+        return result
+
+    @staticmethod
+    def _typical_case_title(heading: str) -> str:
+        candidates = [part.strip() for part in heading.split("——") if part.strip()]
+        case_titles = [candidate for candidate in candidates if candidate.endswith("案")]
+        return case_titles[-1] if case_titles else heading.strip()
+
+    @staticmethod
+    def _normalize_typical_case(title: str, paragraphs: list[str]) -> str:
+        lines = ["案例信息", title]
+        sections: set[str] = set()
+        for paragraph in paragraphs:
+            text = paragraph.strip()
+            section_match = _TYPICAL_SECTION_RE.match(text)
+            if section_match is not None:
+                section = section_match.group(1)
+                sections.add(section)
+                lines.append(section)
+            else:
+                lines.append(text)
+        required = {"基本案情", "裁判结果", "典型意义"}
+        if not required.issubset(sections):
+            raise SpcGuidingCaseError("official typical-case sections are incomplete")
+        return "\n".join(lines).strip()
 
     @staticmethod
     def _normalize_content(paragraphs: list[str]) -> tuple[str, list[str]]:

@@ -202,7 +202,7 @@ Lexora application
     +----> Agent Platform       Conversation / Run lifecycle (active)
     +----> rag-core             Chunk, lexical/vector ranking, fusion (active)
     +----> LegalKnowledgePort   verified statute retrieval (active)
-    +----> CaseLawKnowledgePort reviewed guiding-case retrieval (active)
+    +----> CaseLawKnowledgePort reviewed official-case retrieval (active)
                  |
                  +----> application-owned storage/retrieval adapters
 ```
@@ -212,10 +212,12 @@ versions remain unavailable to conversations until human review. Retrieval prese
 URL and source status, and its Recall@K/MRR evaluation is separate from answer quality.
 
 The first case-law workflow downloads a curated manifest from the Supreme People's Court's official
-guiding-case pages. It validates the final host, parses named decision sections, and stores each
-downloaded version as pending. Only approved, active versions are retrieved. Case-law context may
-support similarity and difference analysis; it never establishes user facts or guarantees the same
-outcome.
+guiding, reference and typical-case pages. A structured manifest can select multiple cases from one
+official collection while issuing only one page request. The connector validates the final host,
+parses named decision sections, and stores each downloaded version as pending. Only approved, active
+versions are retrieved. Case-law context may support similarity and difference analysis; it never
+establishes user facts or guarantees the same outcome. Retrieval evaluation reads the reviewed local
+corpus and never downloads official pages.
 
 ## Structured Case Profile
 

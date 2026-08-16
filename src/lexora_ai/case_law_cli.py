@@ -10,7 +10,11 @@ from uuid import UUID
 
 from lexora_ai.api.dependencies import get_embedding_gateway, get_session_factory
 from lexora_ai.application.case_law_sources import CaseLawSourceService
-from lexora_ai.application.case_law_sync import CaseLawSyncService
+from lexora_ai.application.case_law_sync import (
+    CaseLawSourceLocator,
+    CaseLawSyncService,
+    parse_case_law_manifest,
+)
 from lexora_ai.domain import LegalSourceReviewStatus
 from lexora_ai.infrastructure.spc_guiding_cases import SpcGuidingCaseConnector
 
@@ -21,6 +25,13 @@ def _parser() -> argparse.ArgumentParser:
     sync = commands.add_parser("sync", help="download official cases for review")
     sync.add_argument("--manifest", type=Path)
     sync.add_argument("--url", action="append", dest="urls")
+    sync.add_argument(
+        "--case-ordinal",
+        action="append",
+        type=int,
+        dest="case_ordinals",
+        help="selected case number within one typical-case collection",
+    )
     sync.add_argument(
         "--request-interval",
         type=float,
@@ -35,22 +46,20 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _load_urls(path: Path | None) -> list[str]:
+def _load_locators(path: Path | None) -> list[CaseLawSourceLocator]:
     if path is None:
         resource = files("lexora_ai.resources").joinpath("case_law_sources.json")
         payload = json.loads(resource.read_text(encoding="utf-8"))
     else:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, list) or not all(
-        isinstance(url, str) and url.strip() for url in payload
-    ):
-        raise ValueError("case-law manifest must be a JSON array of non-empty URLs")
-    return [url.strip() for url in payload]
+    return parse_case_law_manifest(payload)
 
 
 async def _run(args: argparse.Namespace) -> int:
     if args.command == "sync" and args.request_interval < 10:
         raise ValueError("request interval must be at least 10 seconds")
+    if args.command == "sync" and args.case_ordinals and len(args.urls or []) != 1:
+        raise ValueError("case ordinals require exactly one --url")
     sources = CaseLawSourceService(get_session_factory(), get_embedding_gateway())
     service = CaseLawSyncService(
         sources,
@@ -58,7 +67,20 @@ async def _run(args: argparse.Namespace) -> int:
         request_interval_seconds=(args.request_interval if args.command == "sync" else 0),
     )
     if args.command == "sync":
-        results = await service.sync(args.urls or _load_urls(args.manifest))
+        locators = (
+            [
+                CaseLawSourceLocator(
+                    source_url=url,
+                    case_ordinals=(
+                        tuple(args.case_ordinals or ()) if len(args.urls) == 1 else ()
+                    ),
+                )
+                for url in args.urls
+            ]
+            if args.urls
+            else _load_locators(args.manifest)
+        )
+        results = await service.sync(locators)
         for result in results:
             print(json.dumps(asdict(result), ensure_ascii=False))
         return 1 if any(result.outcome == "failed" for result in results) else 0

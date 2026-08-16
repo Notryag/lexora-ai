@@ -2,6 +2,10 @@ from datetime import date
 
 import pytest
 
+from lexora_ai.application.case_law_sync import (
+    CaseLawSourceLocator,
+    parse_case_law_manifest,
+)
 from lexora_ai.infrastructure.spc_guiding_cases import (
     SpcGuidingCaseConnector,
     SpcGuidingCaseError,
@@ -74,3 +78,132 @@ def test_parser_extracts_structured_official_reference_case() -> None:
     assert source.source_name == "人民法院案例库入库参考案例"
     assert source.published_on == date(2025, 1, 9)
     assert "裁判要旨\n量刑应当综合全案情节。" in source.content
+
+
+def test_parser_selects_cases_from_one_official_typical_case_collection() -> None:
+    html = """
+    <div class="detail">
+      <div class="title">涉婚姻家庭纠纷典型案例</div>
+      <div class="clearfix detail_mes">
+        <li>来源：最高人民法院新闻局</li>
+        <li>发布时间：2025-01-15 19:55:26</li>
+      </div>
+      <div class="txt big"><div class="txt_txt">
+        <p>案例一：婚前房产加名——崔某某与陈某某离婚纠纷案</p>
+        <p>案例二：父母出资购房——范某某与许某某离婚纠纷案</p>
+        <p>案例三：藏匿子女——颜某某申请人格权侵害禁令案</p>
+        <p>案例四：赠与第三人——崔某某与叶某某及高某某赠与合同纠纷案</p>
+        <p>案例一：婚前房产加名——崔某某与陈某某离婚纠纷案</p>
+        <p>〖基本案情〗</p><p>婚后将婚前房屋登记为双方共有。</p>
+        <p>〖裁判结果〗</p><p>房屋归给予方并补偿另一方。</p>
+        <p>〖典型意义〗</p><p>综合共同生活和家庭贡献合理补偿。</p>
+        <p>案例二：父母出资购房——范某某与许某某离婚纠纷案</p>
+        <p>〖基本案情〗</p><p>一方父母全款购房并登记至双方名下。</p>
+        <p>〖裁判结果〗</p><p>房屋归出资方子女并补偿另一方。</p>
+        <p>〖典型意义〗</p><p>综合出资来源与婚姻存续时间。</p>
+        <p>案例三：藏匿子女——颜某某申请人格权侵害禁令案</p>
+        <p>〖基本案情〗</p><p>一方藏匿子女。</p>
+        <p>〖裁判结果〗</p><p>法院签发禁令。</p>
+        <p>〖典型意义〗</p><p>及时保护未成年人。</p>
+        <p>案例四：赠与第三人——崔某某与叶某某及高某某赠与合同纠纷案</p>
+        <p>〖基本案情〗</p><p>一方擅自向第三人转账。</p>
+        <p>〖裁判结果〗</p><p>赠与无效并全部返还。</p>
+        <p>〖典型意义〗</p><p>维护夫妻共同财产平等处理权。</p>
+        <p>责任编辑：某某</p>
+      </div></div>
+    </div>
+    """
+
+    sources = SpcGuidingCaseConnector().parse_many(
+        CaseLawSourceLocator(
+            source_url="https://www.court.gov.cn/zixun/xiangqing/452761.html",
+            case_ordinals=(1, 2, 4),
+        ),
+        html,
+    )
+
+    assert [source.case_number for source in sources] == [
+        "最高法典型案例 2025-01-15 案例一",
+        "最高法典型案例 2025-01-15 案例二",
+        "最高法典型案例 2025-01-15 案例四",
+    ]
+    assert [source.title for source in sources] == [
+        "崔某某与陈某某离婚纠纷案",
+        "范某某与许某某离婚纠纷案",
+        "崔某某与叶某某及高某某赠与合同纠纷案",
+    ]
+    assert all(source.source_name == "最高人民法院典型案例" for source in sources)
+    assert "典型意义\n维护夫妻共同财产平等处理权。" in sources[2].content
+    assert "责任编辑" not in sources[2].content
+
+
+def test_parser_handles_case_title_before_typical_summary() -> None:
+    html = """
+    <div class="detail">
+      <div class="title">反家庭暴力犯罪典型案例</div>
+      <div class="clearfix detail_mes"><li>发布时间：2024-11-25 10:00:13</li></div>
+      <div class="txt big"><div class="txt_txt">
+        <p>案例四：被告人刘某坤虐待、重婚案——依法惩处</p>
+        <p>〖基本案情〗</p><p>已有配偶又与他人以夫妻名义共同生活。</p>
+        <p>〖裁判结果〗</p><p>以重婚罪判处有期徒刑一年。</p>
+        <p>〖典型意义〗</p><p>保护共同生活的妇女和未成年人。</p>
+      </div></div>
+    </div>
+    """
+
+    source = SpcGuidingCaseConnector().parse_many(
+        CaseLawSourceLocator(
+            source_url="https://www.court.gov.cn/zixun/xiangqing/448541.html",
+            case_ordinals=(4,),
+        ),
+        html,
+    )[0]
+
+    assert source.title == "被告人刘某坤虐待、重婚案"
+    assert source.case_number == "最高法典型案例 2024-11-25 案例四"
+
+
+def test_manifest_accepts_individual_pages_and_selected_collection_cases() -> None:
+    locators = parse_case_law_manifest(
+        [
+            "https://www.court.gov.cn/shenpan/xiangqing/27821.html",
+            {
+                "url": "https://www.court.gov.cn/zixun/xiangqing/452761.html",
+                "case_ordinals": [1, 2, 4],
+            },
+        ]
+    )
+
+    assert locators == [
+        CaseLawSourceLocator(
+            source_url="https://www.court.gov.cn/shenpan/xiangqing/27821.html"
+        ),
+        CaseLawSourceLocator(
+            source_url="https://www.court.gov.cn/zixun/xiangqing/452761.html",
+            case_ordinals=(1, 2, 4),
+        ),
+    ]
+
+
+def test_parser_rejects_missing_selected_collection_case() -> None:
+    html = """
+    <div class="detail">
+      <div class="title">典型案例</div>
+      <div class="clearfix detail_mes"><li>发布时间：2025-01-15 19:55:26</li></div>
+      <div class="txt big"><div class="txt_txt">
+        <p>案例一：某离婚纠纷案</p>
+        <p>〖基本案情〗</p><p>事实。</p>
+        <p>〖裁判结果〗</p><p>结果。</p>
+        <p>〖典型意义〗</p><p>意义。</p>
+      </div></div>
+    </div>
+    """
+
+    with pytest.raises(SpcGuidingCaseError, match="not found: 2"):
+        SpcGuidingCaseConnector().parse_many(
+            CaseLawSourceLocator(
+                source_url="https://www.court.gov.cn/zixun/xiangqing/452761.html",
+                case_ordinals=(2,),
+            ),
+            html,
+        )

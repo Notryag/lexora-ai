@@ -8,6 +8,7 @@ export type CaseLawCitation = components["schemas"]["CaseLawCitation"];
 
 export type ChatMessage = {
   id: string;
+  runId?: string;
   role: "assistant" | "user";
   text: string;
   legalCitations?: LegalCitation[];

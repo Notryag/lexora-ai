@@ -116,6 +116,7 @@ export function LexoraWorkspace() {
     onSuccess: (result) => {
       setPendingAssistantMessage((current) => ({
         id: current?.id ?? crypto.randomUUID(),
+        runId: result.run_id,
         role: "assistant",
         text: result.assistant_message,
         legalCitations: result.legal_citations,
@@ -180,6 +181,7 @@ export function LexoraWorkspace() {
     const persistedMessages = messagesQuery.data ?? [];
     const mapped = persistedMessages.map((message) => ({
       id: message.id,
+      runId: message.run_id ?? undefined,
       role: message.role === "user" ? ("user" as const) : ("assistant" as const),
       text: message.content,
       legalCitations: message.legal_citations,
@@ -190,7 +192,9 @@ export function LexoraWorkspace() {
     const withUser = pendingUserMessage && !pendingUserPersisted
       ? [...mapped, pendingUserMessage]
       : mapped;
-    const withPending = pendingAssistantMessage
+    const pendingAssistantPersisted = pendingAssistantMessage?.runId
+      && mapped.some((message) => message.runId === pendingAssistantMessage.runId);
+    const withPending = pendingAssistantMessage && !pendingAssistantPersisted
       ? [...withUser, pendingAssistantMessage]
       : withUser;
     return withPending.length ? withPending : [welcomeMessage];

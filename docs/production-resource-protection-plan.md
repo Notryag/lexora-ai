@@ -18,7 +18,7 @@
 - cgroup v2 与 Docker systemd cgroup driver 已启用；
 - 同时运行 Lexora、Dayboard、Sub2API、Debug Relay 及共享 PostgreSQL/Redis，共 11 个容器；
 - SSH 的 `OOMScoreAdjust=-1000`，`dockerd=-500`，`containerd=-999`；
-- `systemd-oomd` 未安装；
+- `systemd-oomd` 已安装并启用，仅监控全机 Swap 高水位；
 - Docker Build Cache 已精确清理为 0；未清理镜像、容器或数据卷。
 
 Lexora 应用已配置运行时限制；PostgreSQL 已迁移到共享 `platform-postgres`，由平台 Compose
@@ -169,8 +169,8 @@ docker inspect CONTAINER_NAMES \
 
 ## 8. Phase 3：提前终止策略
 
-只有完成 Phase 1 和 Phase 2 后，才评估 `systemd-oomd`。当前系统支持 cgroup v2，但尚未安装
-该组件。
+只有完成 Phase 1 和 Phase 2 后，才评估 `systemd-oomd`。本机已在前两阶段验收完成后安装，
+采用 Swap 80% 高水位策略，不启用常态内存压力 kill。
 
 实施前应先提交独立设计，明确：
 
@@ -219,4 +219,4 @@ Build Cache 已在用户确认后使用精确的 builder cache 清理命令回�
 任何阶段遇到未知 Compose 改动、未提交用户修改或无法证明数据安全时，应停止对应变更并报告，
 不要重置或覆盖现有工作区。
 
-本次结论见 [systemd-oomd Assessment](./systemd-oomd-assessment.md)：当前保持未安装、未启用。
+本次实施与回滚方式见 [systemd-oomd Assessment](./systemd-oomd-assessment.md)。

@@ -80,4 +80,5 @@ zero without pruning images, containers, or volumes. The platform cleanup timer 
 cache daily and only prunes unused images older than seven days.
 
 Continue to avoid production-host builds and stress tests. Do not increase Swap as a substitute for
-resource isolation. The separate systemd-oomd assessment concludes that it should remain disabled.
+resource isolation. The separate systemd-oomd assessment records the conservative Swap-only policy
+installed after the user requested protection against accidental local builds.

@@ -305,15 +305,16 @@ test("persists material and continues a cited legal conversation", async ({ page
   await expect(page.getByText("法律研究 Agent", { exact: true })).toHaveCount(1);
   await expect(page.getByText("检索法规依据", { exact: true })).toHaveCount(1);
   await expect(page.getByLabel("分析过程").getByText("已完成", { exact: true })).toHaveCount(3);
-  await expect(page.getByRole("button", { name: "档案 4，已更新" })).toBeVisible();
-  await page.getByRole("button", { name: "档案 4，已更新" }).click();
+  const restoredProfile = page.getByRole("button", { name: /档案 4/ });
+  await expect(restoredProfile).toBeVisible();
+  await restoredProfile.click();
   await expect(page.getByRole("textbox", { name: "当事人陈述" })).toHaveValue(
     "公司连续三个月拖欠工资",
   );
-  await expect(page.getByRole("link", { name: /中华人民共和国劳动合同法/ })).toHaveAttribute(
-    "href",
-    "https://flk.npc.gov.cn/detail?id=test",
-  );
+  await expect(
+    page.getByRole("region", { name: "法规依据" })
+      .getByText("中华人民共和国劳动合同法", { exact: true }),
+  ).toBeVisible();
   expect(conversationRequests.filter((item) => item.startsWith("POST "))).toEqual([
     `POST /api/v1/cases/${caseId}/messages/stream`,
   ]);

@@ -41,7 +41,9 @@ from lexora_ai.infrastructure.north_tools import build_lexora_tools
 from lexora_ai.prompts import (
     LEXORA_SYSTEM_PROMPT,
     build_case_analysis_prompt,
-    build_conversation_prompt,
+    build_conversation_case_data,
+    build_specialist_task_input,
+    render_conversation_prompt,
 )
 
 
@@ -80,14 +82,10 @@ class NorthCaseAnalysisGateway:
                 thread_id=str(analysis_id),
             )
         except (APIConnectionError, APITimeoutError, RateLimitError) as exc:
-            raise ModelTemporarilyUnavailableError(
-                "模型服务暂时不可用，请稍后重试。"
-            ) from exc
+            raise ModelTemporarilyUnavailableError("模型服务暂时不可用，请稍后重试。") from exc
         except APIStatusError as exc:
             if exc.status_code >= 500:
-                raise ModelTemporarilyUnavailableError(
-                    "模型服务暂时不可用，请稍后重试。"
-                ) from exc
+                raise ModelTemporarilyUnavailableError("模型服务暂时不可用，请稍后重试。") from exc
             raise
         return GeneratedCaseAnalysis(
             content=str(response),
@@ -174,7 +172,7 @@ class NorthCaseAnalysisGateway:
         case_memory: ConversationCaseMemoryPort | None,
         event_sink: RuntimeEventSink | None,
     ) -> GeneratedConversationTurn:
-        prompt = build_conversation_prompt(
+        case_data = build_conversation_case_data(
             request,
             history=(),
             evidence=evidence,
@@ -183,6 +181,11 @@ class NorthCaseAnalysisGateway:
             retrieval_available=retrieval is not None,
             case_memory_available=case_memory is not None,
         )
+        prompt = render_conversation_prompt(case_data)
+
+        def specialist_input(task: str, _runtime: object) -> str:
+            return build_specialist_task_input(task, case_data)
+
         resolved_thread_id = str(thread_id)
         resolved_run_id = str(run_id or thread_id)
         manager = RunManager()
@@ -219,11 +222,17 @@ class NorthCaseAnalysisGateway:
             )
             subagents = [
                 build_case_analyst_subagent(
-                    result_processor=lambda result, _runtime: case_context.process(result)
+                    result_processor=lambda result, _runtime: case_context.process(result),
+                    input_builder=specialist_input,
                 )
             ]
             if research_tools:
-                subagents.append(build_legal_researcher_subagent(research_tools))
+                subagents.append(
+                    build_legal_researcher_subagent(
+                        research_tools,
+                        input_builder=specialist_input,
+                    )
+                )
             result = await RunExecutor(self._stream_bridge, manager).execute(
                 record,
                 agent_factory=lambda: build_agent(
@@ -245,14 +254,10 @@ class NorthCaseAnalysisGateway:
                 publish_lifecycle=False,
             )
         except (APIConnectionError, APITimeoutError, RateLimitError) as exc:
-            raise ModelTemporarilyUnavailableError(
-                "模型服务暂时不可用，请稍后重试。"
-            ) from exc
+            raise ModelTemporarilyUnavailableError("模型服务暂时不可用，请稍后重试。") from exc
         except APIStatusError as exc:
             if exc.status_code >= 500:
-                raise ModelTemporarilyUnavailableError(
-                    "模型服务暂时不可用，请稍后重试。"
-                ) from exc
+                raise ModelTemporarilyUnavailableError("模型服务暂时不可用，请稍后重试。") from exc
             raise
         content = _final_assistant_text(result.values)
         if not content:

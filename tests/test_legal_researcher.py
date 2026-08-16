@@ -29,7 +29,7 @@ def test_legal_researcher_has_a_bounded_reviewed_source_tool_surface() -> None:
     assert spec.tools == (authority, cases)
     assert spec.skills == ()
     assert spec.result_schema is LegalResearchDossier
-    assert spec.recursion_limit == 10
+    assert spec.recursion_limit == 16
     assert "does not answer the user or update memory" in spec.description
 
 

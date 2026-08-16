@@ -21,20 +21,21 @@ classification 不生成追问候选。普通寒暄返回 social 和空案件字
 """
 
 
-def build_case_analyst_subagent(*, result_processor=None) -> SubagentSpec:
+def build_case_analyst_subagent(*, result_processor=None, input_builder=None) -> SubagentSpec:
     return SubagentSpec(
         name=CASE_ANALYST_NAME,
         description=(
             "Required when the user asks about their own or another person's concrete legal "
             "situation, supplies case facts, continues an existing case, raises multiple issues, "
             "or gives ambiguous facts. The reusable case profile is a required product result, "
-            "even when the legal question is already clear. Pass the complete current case_data, "
-            "including the exact user message and case profile. Do not use for greetings or a "
+            "even when the legal question is already clear. Runtime supplies the exact current "
+            "case_data, so do not reproduce it in the task. Do not use for greetings or a "
             "standalone abstract legal-rule question. It does not research or answer."
         ),
         system_prompt=_CASE_ANALYST_PROMPT,
         result_schema=LegalTurnAssessment,
         result_processor=result_processor,
+        input_builder=input_builder,
         timeout_seconds=60,
         recursion_limit=8,
     )

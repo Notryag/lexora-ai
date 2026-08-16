@@ -13,7 +13,9 @@ from lexora_ai.domain import (
 from lexora_ai.prompts import (
     LEXORA_SYSTEM_PROMPT,
     build_case_analysis_prompt,
+    build_conversation_case_data,
     build_conversation_prompt,
+    build_specialist_task_input,
 )
 
 
@@ -94,6 +96,17 @@ def test_conversation_prompt_keeps_specialist_routing_dynamic() -> None:
     assert "prepare_legal_turn" not in prompt
     assert "法定区间不等于具体" in LEXORA_SYSTEM_PROMPT
     assert "目前只能说明一般原则，不能判断具体结果" not in LEXORA_SYSTEM_PROMPT
+
+
+def test_specialist_input_adds_exact_host_case_data_without_lead_restatement() -> None:
+    request = ConversationTurnRequest(message="我们没有以夫妻名义同居，算重婚吗？")
+    case_data = build_conversation_case_data(request, case_memory_available=True)
+
+    specialist_input = build_specialist_task_input("提取明确事实和回答目标", case_data)
+
+    assert specialist_input.startswith("提取明确事实和回答目标\n")
+    assert '"user_message":"我们没有以夫妻名义同居，算重婚吗？"' in specialist_input
+    assert "宿主运行时原样提供" in specialist_input
 
 
 def test_conversation_prompt_includes_user_confirmed_case_profile() -> None:

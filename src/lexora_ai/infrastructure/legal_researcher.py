@@ -33,19 +33,22 @@ _LEGAL_RESEARCHER_PROMPT = """你是法析 Lexora 的法律研究子 Agent。
 """
 
 
-def build_legal_researcher_subagent(tools: Sequence[Any]) -> SubagentSpec:
+def build_legal_researcher_subagent(
+    tools: Sequence[Any],
+    *,
+    input_builder=None,
+) -> SubagentSpec:
     assigned_tools = tuple(
-        tool
-        for tool in tools
-        if getattr(tool, "name", None) in LEGAL_RESEARCH_TOOL_NAMES
+        tool for tool in tools if getattr(tool, "name", None) in LEGAL_RESEARCH_TOOL_NAMES
     )
     if not assigned_tools:
         raise ValueError("legal researcher requires at least one research tool")
     return SubagentSpec(
         name=LEGAL_RESEARCHER_NAME,
         description=(
-            "Use for legal rules, authority verification, or case comparisons. Pass the exact "
-            "user question and relevant case_data. It may run in parallel with Case Analyst when "
+            "Use for legal rules, authority verification, or case comparisons. Runtime supplies "
+            "the exact user question and case_data, so do not reproduce them in the task. It may "
+            "run in parallel with Case Analyst when "
             "the research question is already clear; include an analyst result when research "
             "actually depends on it. "
             "It uses only assigned reviewed-source tools and returns a sourced dossier for lead "
@@ -54,8 +57,9 @@ def build_legal_researcher_subagent(tools: Sequence[Any]) -> SubagentSpec:
         system_prompt=_LEGAL_RESEARCHER_PROMPT,
         tools=assigned_tools,
         result_schema=LegalResearchDossier,
+        input_builder=input_builder,
         timeout_seconds=90,
-        recursion_limit=10,
+        recursion_limit=16,
     )
 
 

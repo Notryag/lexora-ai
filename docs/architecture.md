@@ -362,6 +362,14 @@ a specialist or impose an order. This prevents loops while preserving dynamic ro
 changes can cause a one-time cache-prefix miss after deployment; provider cache and usage metrics remain the
 final production check.
 
+Delegation follows DeerFlow's separation between a short user-facing task description and the specialist
+task. Lexora retains one measured host-specific extension: North's generic `SubagentSpec.input_builder`
+lets the host attach the exact current `case_data` after the Supervisor has chosen a specialist. The
+Supervisor therefore states only the objective and boundaries instead of regenerating user facts inside
+every tool argument. North neither reads nor interprets the legal payload. This difference is retained only
+because it reduces duplicated output, preserves negation and qualifiers, and is reusable by other hosts;
+production latency and token usage remain the acceptance evidence.
+
 The target conversation architecture is a thin product Run boundary around a North-owned legal
 Supervisor. The Supervisor may delegate bounded work to Lexora-owned Case Analyst, Legal Researcher,
 and Material Analyst subagents. Skills describe each specialist's method, while explicitly assigned
@@ -387,6 +395,9 @@ findings, exact queries, coverage, limitations, and unresolved questions; it can
 memory, create product Runs or messages, or generate the final response. It can be called directly for
 a simple rule question or after Case Analyst for a fact-dependent issue. Submitted-material retrieval
 remains a bounded direct Supervisor tool until a Material Analyst has a measured reason to exist.
+Its recursion limit permits the planned search, one allowed query rewrite, and final structured response;
+the independent 90-second timeout remains the wall-clock bound. A lower graph-step limit previously ended
+a valid multi-query research turn before dossier generation even though every retrieval tool succeeded.
 
 Research `unresolved_questions` are legal-source coverage gaps, not user clarification requests. The
 Supervisor may ask only application-approved `response_contract.follow_up_questions`; it cannot use a

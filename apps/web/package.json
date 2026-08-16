@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:unit": "node --test --experimental-strip-types tests/activity-presentation.test.mjs",
     "typecheck": "tsc --noEmit",
     "api:types": "openapi-typescript ${OPENAPI_URL:-http://127.0.0.1:8010/openapi.json} -o src/lib/api/schema.d.ts"
   },

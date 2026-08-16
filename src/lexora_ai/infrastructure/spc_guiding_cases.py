@@ -13,7 +13,9 @@ from lexora_ai.domain import CaseLawSourceCreate, CaseLawStatus, LegalSourceRevi
 _CASE_NUMBER_RE = re.compile(r"指导性?案例\d+号")
 _REFERENCE_CASE_NUMBER_RE = re.compile(r"入库编号\s*[-：:]?\s*(\d{4}(?:-\d+){4})")
 _PUBLISHED_RE = re.compile(r"发布时间[：:]\s*(\d{4}-\d{2}-\d{2})")
-_TYPICAL_CASE_HEADING_RE = re.compile(r"^案例([一二三四五六七八九十]+)\s*[：:]\s*(.+)$")
+_TYPICAL_CASE_HEADING_RE = re.compile(
+    r"^案例([一二三四五六七八九十]+)(?:\s*[：:]\s*(.+))?$"
+)
 _TYPICAL_SECTION_RE = re.compile(r"^[〖【\[]\s*(基本案情|裁判结果|典型意义)\s*[〗】\]]$")
 _CHINESE_ORDINALS = {
     "一": 1,
@@ -238,22 +240,29 @@ class SpcGuidingCaseConnector:
         result: dict[int, tuple[str, list[str]]] = {}
         for index, paragraph in enumerate(paragraphs):
             match = _TYPICAL_CASE_HEADING_RE.match(paragraph.strip())
-            if match is None or index + 1 >= len(paragraphs):
+            if match is None:
                 continue
-            if _TYPICAL_SECTION_RE.match(paragraphs[index + 1].strip()) is None:
+            heading = (match.group(2) or "").strip()
+            section_index = index + 1
+            if not heading:
+                if index + 2 >= len(paragraphs):
+                    continue
+                heading = paragraphs[index + 1].strip()
+                section_index = index + 2
+            if _TYPICAL_SECTION_RE.match(paragraphs[section_index].strip()) is None:
                 continue
             ordinal = _CHINESE_ORDINALS.get(match.group(1))
             if ordinal is None:
                 continue
             body: list[str] = []
-            for following in paragraphs[index + 1 :]:
+            for following in paragraphs[section_index:]:
                 following = following.strip()
                 if _TYPICAL_CASE_HEADING_RE.match(following) or following.startswith(
                     "责任编辑"
                 ):
                     break
                 body.append(following)
-            result[ordinal] = (match.group(2).strip(), body)
+            result[ordinal] = (heading, body)
         return result
 
     @staticmethod

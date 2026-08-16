@@ -143,7 +143,8 @@ def test_parser_handles_case_title_before_typical_summary() -> None:
       <div class="title">反家庭暴力犯罪典型案例</div>
       <div class="clearfix detail_mes"><li>发布时间：2024-11-25 10:00:13</li></div>
       <div class="txt big"><div class="txt_txt">
-        <p>案例四：被告人刘某坤虐待、重婚案——依法惩处</p>
+        <p>案例四</p>
+        <p>被告人刘某坤虐待、重婚案——依法惩处</p>
         <p>〖基本案情〗</p><p>已有配偶又与他人以夫妻名义共同生活。</p>
         <p>〖裁判结果〗</p><p>以重婚罪判处有期徒刑一年。</p>
         <p>〖典型意义〗</p><p>保护共同生活的妇女和未成年人。</p>

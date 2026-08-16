@@ -37,8 +37,12 @@ CASE_LAW_SECTIONS = (
     "关联索引",
 )
 CASE_LAW_TOP_K = 5
+CASE_LAW_MIN_VECTOR_SCORE = 0.55
 CASE_LAW_STOP_TERMS = {
     "一下",
+    "可以",
+    "是否",
+    "能否",
     "什么",
     "应该",
     "怎么",
@@ -143,15 +147,22 @@ def rank_case_law(
     )
     vector_hits = []
     if query_embedding is not None and embedding_model is not None:
-        vector_hits = rank_vector_documents(
-            query_embedding,
-            [
-                EmbeddedRetrievalDocument(document=document, embedding=tuple(chunk.embedding))
-                for chunk, document in zip(chunks, documents, strict=True)
-                if chunk.embedding is not None and chunk.embedding_model == embedding_model
-            ],
-            top_k=candidate_k,
-        )
+        vector_hits = [
+            hit
+            for hit in rank_vector_documents(
+                query_embedding,
+                [
+                    EmbeddedRetrievalDocument(
+                        document=document, embedding=tuple(chunk.embedding)
+                    )
+                    for chunk, document in zip(chunks, documents, strict=True)
+                    if chunk.embedding is not None
+                    and chunk.embedding_model == embedding_model
+                ],
+                top_k=candidate_k,
+            )
+            if hit.score >= CASE_LAW_MIN_VECTOR_SCORE
+        ]
     rankings = [ranking for ranking in (lexical_hits, vector_hits) if ranking]
     if not rankings:
         return []

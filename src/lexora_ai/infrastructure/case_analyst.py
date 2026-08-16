@@ -14,22 +14,27 @@ _CASE_ANALYST_PROMPT = """你是法析 Lexora 的案件理解子 Agent。
 
 只提取用户本轮明确表达的事实、问题、请求和证据。案件档案仅用于复用完全相同的 factor key 和
 识别冲突，不得把历史推断当成本轮事实。严格保留否定范围、近似金额和不确定表述。不要生成
-罪名成立、责任大小、量刑预测、法律规则或通用风险因素。普通寒暄返回 social 和空案件字段。
+罪名成立、责任大小、量刑预测、法律规则或通用风险因素。只有 estimate、calculation 或 action
+目标确实存在一个尚未解决且会改变结果的高影响原子事实时，才生成追问候选；rule 和
+classification 不生成追问候选。普通寒暄返回 social 和空案件字段。
 只输出符合 schema 的结构化结果。
 """
 
 
-def build_case_analyst_subagent() -> SubagentSpec:
+def build_case_analyst_subagent(*, result_processor=None) -> SubagentSpec:
     return SubagentSpec(
         name=CASE_ANALYST_NAME,
         description=(
-            "Analyze every current Lexora turn before research. Pass the complete current "
-            "case_data payload, including the exact user message and case profile, as the task. "
-            "The specialist returns intent, answer targets, grounded facts, and factor proposals; "
-            "it does not research or answer."
+            "Required when the user asks about their own or another person's concrete legal "
+            "situation, supplies case facts, continues an existing case, raises multiple issues, "
+            "or gives ambiguous facts. The reusable case profile is a required product result, "
+            "even when the legal question is already clear. Pass the complete current case_data, "
+            "including the exact user message and case profile. Do not use for greetings or a "
+            "standalone abstract legal-rule question. It does not research or answer."
         ),
         system_prompt=_CASE_ANALYST_PROMPT,
         result_schema=LegalTurnAssessment,
+        result_processor=result_processor,
         timeout_seconds=60,
         recursion_limit=8,
     )

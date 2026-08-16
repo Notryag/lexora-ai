@@ -119,6 +119,24 @@ def test_turn_evaluation_requires_user_facts_in_case_profile() -> None:
     ]
 
 
+def test_turn_evaluation_can_require_a_profile_update() -> None:
+    result = CaseConversationTurnResult.model_validate(_turn_result_payload("已完成分析。"))
+    observation = StreamObservation(
+        result=result,
+        streamed_text=result.assistant_message,
+        delta_events=1,
+        first_token_seconds=0.1,
+        total_seconds=0.2,
+    )
+
+    failures = _evaluate_turn(
+        observation,
+        TurnExpectation(require_profile_update=True),
+    )
+
+    assert failures == ["expected case profile update"]
+
+
 @pytest.mark.asyncio
 async def test_execute_suite_checks_stream_persistence_and_exact_cleanup() -> None:
     requests: list[tuple[str, str]] = []

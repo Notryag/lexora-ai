@@ -1,6 +1,7 @@
 """Lexora application use cases."""
 
 from lexora_ai.application.analyze_case import AnalyzeCaseService
+from lexora_ai.application.case_context import CaseContextService
 from lexora_ai.application.case_law_sources import CaseLawSourceService
 from lexora_ai.application.case_law_sync import (
     CaseLawConnector,
@@ -58,6 +59,7 @@ __all__ = [
     "CaseRunService",
     "CaseNotFoundError",
     "CaseWorkspaceService",
+    "CaseContextService",
     "ConversationContextMessage",
     "ConversationCaseLawChunk",
     "ConversationCaseMemoryPort",

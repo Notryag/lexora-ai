@@ -45,6 +45,9 @@ from lexora_ai.domain.legal_knowledge import (
     LegalSourceUpdate,
 )
 from lexora_ai.domain.legal_turns import (
+    LegalResearchCoverage,
+    LegalResearchDossier,
+    LegalResearchFinding,
     LegalTurnAnswerKind,
     LegalTurnAnswerMode,
     LegalTurnAnswerTarget,
@@ -136,6 +139,9 @@ __all__ = [
     "LegalSourceStatus",
     "LegalSourceSummary",
     "LegalSourceUpdate",
+    "LegalResearchCoverage",
+    "LegalResearchDossier",
+    "LegalResearchFinding",
     "LegalTurnAnswerMode",
     "LegalTurnAnswerKind",
     "LegalTurnAnswerTarget",

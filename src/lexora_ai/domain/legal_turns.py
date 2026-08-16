@@ -47,6 +47,116 @@ class LegalTurnFactorGroundingStatus(StrEnum):
     conflicting = "conflicting"
 
 
+class LegalResearchCoverage(StrEnum):
+    sufficient = "sufficient"
+    partial = "partial"
+    insufficient = "insufficient"
+
+
+class LegalResearchFinding(BaseModel):
+    question: str = Field(
+        min_length=1,
+        max_length=300,
+        description="One research question from the prepared turn.",
+    )
+    conclusion: str = Field(
+        min_length=1,
+        max_length=1200,
+        description=(
+            "Concise rule or comparison supported by the cited search results. Preserve legal "
+            "modality and do not turn a case comparison into a prediction."
+        ),
+    )
+    references: list[str] = Field(
+        default_factory=list,
+        max_length=4,
+        description=(
+            "Only exact L...:C... or C...:S... references returned by research tools that "
+            "directly support this finding."
+        ),
+    )
+    limitations: list[str] = Field(
+        default_factory=list,
+        max_length=4,
+        description="Material source, coverage, or applicability limits for this finding.",
+    )
+
+    @field_validator("question", "conclusion")
+    @classmethod
+    def normalize_research_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("references")
+    @classmethod
+    def validate_references(cls, value: list[str]) -> list[str]:
+        result: list[str] = []
+        for reference in value:
+            normalized = reference.strip()
+            if not (
+                normalized.startswith("L") and ":C" in normalized
+                or normalized.startswith("C") and ":S" in normalized
+            ):
+                raise ValueError("research references must use a legal or case-law reference")
+            if normalized not in result:
+                result.append(normalized)
+        return result
+
+    @field_validator("limitations")
+    @classmethod
+    def normalize_limitations(cls, value: list[str]) -> list[str]:
+        result: list[str] = []
+        for item in value:
+            normalized = item.strip()
+            if normalized and normalized not in result:
+                result.append(normalized)
+        return result
+
+
+class LegalResearchDossier(BaseModel):
+    coverage: LegalResearchCoverage = Field(
+        description=(
+            "Whether retrieved sources sufficiently cover every prepared research question."
+        )
+    )
+    findings: list[LegalResearchFinding] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Source-grounded rules and case comparisons for Supervisor synthesis.",
+    )
+    queries_used: list[str] = Field(
+        default_factory=list,
+        max_length=12,
+        description="Exact search queries actually submitted to the research tools.",
+    )
+    unresolved_questions: list[str] = Field(
+        default_factory=list,
+        max_length=6,
+        description=(
+            "Prepared legal research questions not reliably answered by retrieved sources. These "
+            "are source-coverage gaps, never requests for more user facts and never permission to "
+            "reopen known factors or ordinary premises of the answer target."
+        ),
+    )
+
+    @field_validator("queries_used", "unresolved_questions")
+    @classmethod
+    def normalize_research_items(cls, value: list[str]) -> list[str]:
+        result: list[str] = []
+        for item in value:
+            normalized = item.strip()
+            if normalized and normalized not in result:
+                result.append(normalized)
+        return result
+
+    @model_validator(mode="after")
+    def validate_coverage(self) -> LegalResearchDossier:
+        if self.coverage == LegalResearchCoverage.sufficient and self.unresolved_questions:
+            raise ValueError("sufficient research cannot contain unresolved questions")
+        if self.coverage == LegalResearchCoverage.insufficient and self.findings:
+            raise ValueError("insufficient research cannot claim supported findings")
+        return self
+
+
 class LegalTurnAnswerTarget(BaseModel):
     question: str = Field(
         min_length=1,
@@ -274,6 +384,15 @@ class LegalTurnAssessment(BaseModel):
             "liability, predictions, research queries, or generic warnings."
         ),
     )
+    follow_up_candidates: list[LegalTurnFollowUpCandidate] = Field(
+        default_factory=list,
+        max_length=4,
+        description=(
+            "Only unresolved atomic factors that can change an estimate, calculation, or action "
+            "target. Do not propose a candidate for a rule/classification target, a known fact, "
+            "or an ordinary premise of the user's question."
+        ),
+    )
 
     @field_validator("legal_issue", "case_type", mode="before")
     @classmethod
@@ -309,6 +428,17 @@ class LegalTurnAssessment(BaseModel):
         factor_keys = [factor.key for factor in self.factor_updates]
         if len(factor_keys) != len(set(factor_keys)):
             raise ValueError("factor update keys must be unique")
+        candidate_keys = [candidate.factor_key for candidate in self.follow_up_candidates]
+        if len(candidate_keys) != len(set(candidate_keys)):
+            raise ValueError("follow-up candidate factor keys must be unique")
+        if any(
+            candidate.answer_target_index >= len(self.answer_targets)
+            for candidate in self.follow_up_candidates
+        ):
+            raise ValueError("follow-up candidate references an unknown answer target")
+        factor_key_set = set(factor_keys)
+        if any(candidate.factor_key not in factor_key_set for candidate in self.follow_up_candidates):
+            raise ValueError("follow-up candidates require a matching factor update")
         if self.intent == LegalTurnIntent.social and any(
             (
                 self.legal_issue,
@@ -319,6 +449,7 @@ class LegalTurnAssessment(BaseModel):
                 self.disputed_issues,
                 self.evidence_notes,
                 self.factor_updates,
+                self.follow_up_candidates,
             )
         ):
             raise ValueError("social turns cannot contain case analysis")

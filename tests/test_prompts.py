@@ -46,7 +46,8 @@ def test_conversation_prompt_does_not_claim_external_retrieval() -> None:
     prompt = build_conversation_prompt(request)
 
     assert "公司没有提前通知" in prompt
-    assert "prepare_legal_turn" in prompt
+    assert "不执行固定子 Agent 链路" in prompt
+    assert "prepare_legal_turn" not in prompt
     assert "不重复询问已有信息" in prompt
     assert "事实不完整" in LEXORA_SYSTEM_PROMPT
 
@@ -64,8 +65,8 @@ def test_conversation_prompt_delegates_retrieval_choice_to_agent() -> None:
     )
     payload = json.loads(prompt.split("<case_data>", maxsplit=1)[1].removesuffix("</case_data>"))
 
-    assert "首次必须选择 prepare_legal_turn" in prompt
-    assert "turn_preparation" in LEXORA_SYSTEM_PROMPT
+    assert "选择最少的直接工具或专家调用" in prompt
+    assert "子 Agent 不是固定工作流" in LEXORA_SYSTEM_PROMPT
     assert "普通寒暄只回应问候" in LEXORA_SYSTEM_PROMPT
     assert "response_contract.follow_up_questions" in LEXORA_SYSTEM_PROMPT
     assert "不要追问法域" in LEXORA_SYSTEM_PROMPT
@@ -74,10 +75,10 @@ def test_conversation_prompt_delegates_retrieval_choice_to_agent() -> None:
     assert payload["capabilities"] == {"retrieval": True, "case_memory": True}
     assert payload["retrieved_material_chunks"] == []
     assert "factor_schema" not in payload
-    assert "各字段的生成规则以工具 schema 为准" in LEXORA_SYSTEM_PROMPT
+    assert "Legal Researcher 独占法规与类案底层检索工具" in LEXORA_SYSTEM_PROMPT
 
 
-def test_conversation_prompt_delegates_preparation_to_runtime_tool() -> None:
+def test_conversation_prompt_keeps_specialist_routing_dynamic() -> None:
     request = ConversationTurnRequest(message="入户盗窃五万元大概会判多久？")
 
     prompt = build_conversation_prompt(
@@ -86,8 +87,11 @@ def test_conversation_prompt_delegates_preparation_to_runtime_tool() -> None:
         case_memory_available=True,
     )
 
-    assert "其返回后再调用 prepare_legal_turn" in prompt
-    assert "prepare_legal_turn" in prompt
+    assert "需要结构化案件理解时委派 Case Analyst" in prompt
+    assert "需要法源时委派 Legal Researcher" in prompt
+    assert "并行委派" in LEXORA_SYSTEM_PROMPT
+    assert "不是固定工作流" in LEXORA_SYSTEM_PROMPT
+    assert "prepare_legal_turn" not in prompt
     assert "法定区间不等于具体" in LEXORA_SYSTEM_PROMPT
     assert "目前只能说明一般原则，不能判断具体结果" not in LEXORA_SYSTEM_PROMPT
 

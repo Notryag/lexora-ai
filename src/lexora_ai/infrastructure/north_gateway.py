@@ -18,6 +18,7 @@ from north.runtime import RunManager
 from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 
 from lexora_ai.application import (
+    CaseContextService,
     ConversationCaseLawChunk,
     ConversationCaseMemoryPort,
     ConversationContextMessage,
@@ -30,10 +31,11 @@ from lexora_ai.application import (
 from lexora_ai.config import Settings
 from lexora_ai.domain import CaseAnalysisRequest, ConversationTurnRequest
 from lexora_ai.infrastructure.case_analyst import build_case_analyst_subagent
-from lexora_ai.infrastructure.follow_up_reviewer import NorthFollowUpReviewer
-from lexora_ai.infrastructure.legal_turn_middleware import (
-    LegalTurnPreparationMiddleware,
+from lexora_ai.infrastructure.legal_researcher import (
+    build_legal_researcher_subagent,
+    partition_legal_research_tools,
 )
+from lexora_ai.infrastructure.legal_turn_middleware import LegalDelegationMiddleware
 from lexora_ai.infrastructure.north_tools import build_lexora_tools
 from lexora_ai.prompts import (
     LEXORA_SYSTEM_PROMPT,
@@ -55,7 +57,6 @@ class NorthCaseAnalysisGateway:
         self._settings = settings
         self._checkpointer = checkpointer
         self._client: AppClient | None = None
-        self._follow_up_reviewer = NorthFollowUpReviewer(settings)
 
     async def analyze(
         self,
@@ -194,20 +195,26 @@ class NorthCaseAnalysisGateway:
         if checkpoint_id is not None:
             configurable["checkpoint_id"] = checkpoint_id
         try:
+            all_tools = build_lexora_tools(retrieval)
+            supervisor_tools, research_tools = partition_legal_research_tools(all_tools)
+            case_context = CaseContextService(
+                case_memory,
+                jurisdiction=self._settings.legal_jurisdiction,
+            )
+            subagents = [
+                build_case_analyst_subagent(
+                    result_processor=lambda result, _runtime: case_context.process(result)
+                )
+            ]
+            if research_tools:
+                subagents.append(build_legal_researcher_subagent(research_tools))
             result = await RunExecutor(MemoryStreamBridge(), manager).execute(
                 record,
                 agent_factory=lambda: build_agent(
                     self._get_config(),
-                    tools=build_lexora_tools(
-                        retrieval,
-                        case_memory,
-                        user_message=request.message,
-                        jurisdiction=self._settings.legal_jurisdiction,
-                        follow_up_reviewer=self._follow_up_reviewer,
-                        factor_update_reviewer=self._follow_up_reviewer,
-                    ),
-                    additional_middlewares=[LegalTurnPreparationMiddleware()],
-                    subagents=[build_case_analyst_subagent()],
+                    tools=supervisor_tools,
+                    additional_middlewares=[LegalDelegationMiddleware()],
+                    subagents=subagents,
                     checkpointer=self._checkpointer,
                 ),
                 graph_input={"messages": graph_messages},

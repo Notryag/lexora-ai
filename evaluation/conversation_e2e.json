@@ -133,10 +133,12 @@
               [
                 "不能直接认定",
                 "不能据此直接认定",
+                "不能当然认定",
                 "不足以认定",
                 "不构成重婚",
                 "不能认定构成重婚",
-                "尚不能认定构成重婚"
+                "尚不能认定构成重婚",
+                "不等于当然构成重婚"
               ]
             ],
             "forbidden_terms": [
@@ -155,6 +157,7 @@
             "min_legal_citations": 1,
             "max_answer_chars": 800,
             "max_questions": 0,
+            "require_profile_update": true,
             "min_delta_events": 2
           },
           "review": [

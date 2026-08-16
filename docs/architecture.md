@@ -143,13 +143,13 @@ profile and sufficiency gate rather than by free-form model behavior.
 
 ## Retrieval Evolution
 
-For every conversation turn, a Lexora-owned middleware requires one successful
-`prepare_legal_turn` call before the model may produce a final response. The structured call classifies
-the turn, extracts only user-stated case facts, identifies one legal issue, supplies up to three focused
-authority queries, dynamically defines relevant factual factors, and selects at most two unknown
-outcome-changing factor keys. For legal questions the tool runs
-the raw user question and focused queries through verified-statute retrieval; social turns skip RAG.
-The Agent may then use separate case-material, statute, and guiding-case tools for supplemental searches.
+The legal Supervisor follows DeerFlow's net-benefit routing principle rather than a fixed workflow.
+Greetings are answered directly. A standalone rule or authority question can go straight to Legal
+Researcher. Fact-rich, ambiguous, multi-issue, or continued case descriptions may first use Case
+Analyst, while submitted materials remain available through a direct retrieval tool. The Supervisor
+uses the fewest specialists needed and may pass one specialist's result to another when the tasks are
+dependent. Legal Researcher owns the reviewed-statute and guiding-case tools and may evaluate and
+rewrite searches within fixed recursion, tool-call, and timeout limits before returning a typed dossier.
 Tool closures inject the trusted case and user context, while the model never supplies case or user IDs.
 Selected tools rank persisted chunks lexically and semantically and fuse their rankings. Statute chunks
 preserve their `编/章/节/条` hierarchy; case-law chunks preserve named decision sections. Without an
@@ -157,10 +157,10 @@ embedding configuration all paths retain deterministic lexical retrieval. A stru
 analysis still receives all submitted material chunks because completeness, rather than
 question-specific recall, is its contract.
 
-This follows DeerFlow's middleware boundary without copying its complete agent stack: orchestration
-constraints wrap model calls while domain work remains in tools. North still owns the loop and
-Checkpointer; Lexora owns the legal turn schema, preparation middleware, retrieval plan, and answer
-contract.
+This follows DeerFlow's optional delegation boundary without copying its complete agent stack: role
+descriptions guide semantic routing, while code enforces tool isolation, one attempt per specialist,
+search budgets, and timeouts. North owns the loop and Checkpointer; Lexora owns legal schemas, case
+context processing, evidence rules, and the answer contract.
 
 Vectors use PostgreSQL's native dimension-flexible `vector` type. The current corpus size makes an
 exact database-side vector scan deterministic and sufficient for now; an approximate database index
@@ -220,10 +220,11 @@ outcome.
 ## Structured Case Profile
 
 The personal workspace persists a user-editable `CaseProfile` on each legal case. It contains case
-type, parties, claims, key facts, disputed issues, evidence notes, and missing information. The
-required `prepare_legal_turn` tool stages concise facts explicitly stated or confirmed by the user and
-replaces missing information with questions resolved from the current turn's unknown factor keys. Tool closures retain
-trusted case context; the model never supplies a case or user identifier. Updates remain staged in
+type, parties, claims, key facts, disputed issues, evidence notes, and missing information. When Case
+Analyst is used, North passes its typed `LegalTurnAssessment` to the host-owned `CaseContextService`.
+The service stages concise facts and admits at most two high-impact unknowns for estimate, calculation,
+or action targets; it is application code, not a model-visible tool. Trusted closures retain case
+context, and the model never supplies a case or user identifier. Updates remain staged in
 memory until the Run completes, then commit in the same transaction as the assistant message. Failed
 or cancelled Runs leave the durable profile unchanged.
 
@@ -339,52 +340,61 @@ Agent must ground that classification in retrieved authority. This pattern keeps
 model-driven without delegating exact arithmetic to probabilistic text generation.
 
 Each `CaseProfile` also retains `pending_answer_targets`, the structured questions from the latest
-legal turn. When a later turn is classified as a factual `case_update`, the preparation tool resumes
-those targets and retrieves authorities again before answering. This prevents a multi-turn supplement
+legal turn. When Case Analyst classifies a later turn as a factual `case_update`, `CaseContextService`
+resumes those targets before the Supervisor continues. This prevents a multi-turn supplement
 from becoming a write-only acknowledgement while keeping the decision generic for any matter type.
 
-Preparation instructions follow the layer that enforces or consumes them. The system prompt owns
-stable answer behavior, the preparation tool description states purpose and call timing, Pydantic
-field descriptions own extraction rules, and application code owns review limits, target resumption,
-and retrieval orchestration. Before this split, the preparation description contained 319 words and
-the approximate fixed post-preparation context was 3,086 tokens. The compressed description contains
-80 words, and removing the already-completed preparation tool from later model calls reduces that
-estimate to 997 tokens. These are offline approximations; provider-reported input and cached-input
-usage remains the authority for production cost and cache decisions.
+Instructions follow the layer that enforces or consumes them. The system prompt owns stable answer and
+delegation behavior, specialist descriptions state their material benefit and scope, Pydantic fields own
+extraction rules, and application code owns target resumption, follow-up limits, and case-profile staging.
+The former 500-word model-visible `prepare_legal_turn` schema and description have been removed. Provider-
+reported input, cached-input usage, and live latency remain the authority for cost decisions.
 
-The tool surface is phase-stable: the first model call sees only `prepare_legal_turn`; after its
-successful ToolMessage, middleware removes it and exposes only retrieval and calculation tools.
-This prevents repeated preparation and avoids resending its large schema after the structured state
-already exists. Changing the prompt or tool schema can cause a one-time cache-prefix miss after
-deployment, but it does not invalidate the new stable prefix on every turn; provider cache and usage
-metrics remain the final production check.
+The Supervisor initially sees Case Analyst, Legal Researcher, submitted-material search, and deterministic
+calculations. It never sees raw statute or guiding-case tools. For concrete user-specific legal situations,
+Case Analyst is a required product-state projection; greetings and standalone abstract rules do not need
+one. Research remains optional and dynamically selected by the Supervisor. Independent Case Analyst and
+Researcher work may run in the same response; a dependency may be sequential, but no fixed chain is imposed.
+Middleware removes a specialist after its first attempted delegation in the current turn but does not choose
+a specialist or impose an order. This prevents loops while preserving dynamic routing. Prompt or tool-schema
+changes can cause a one-time cache-prefix miss after deployment; provider cache and usage metrics remain the
+final production check.
 
 The target conversation architecture is a thin product Run boundary around a North-owned legal
 Supervisor. The Supervisor may delegate bounded work to Lexora-owned Case Analyst, Legal Researcher,
 and Material Analyst subagents. Skills describe each specialist's method, while explicitly assigned
 tools provide capabilities. Subagents return typed artifacts and never write product messages,
-business memory, or Runs. `CaseContextService` remains the only future writer for validated case
-profile patches, and the Supervisor remains the only generator of the final user-facing response.
+business memory, or Runs. North's generic result processor passes Case Analyst output to
+`CaseContextService`, the only writer of its staged profile patch. The Supervisor remains the only
+generator of the final user-facing response.
 
 This target does not require one large fixed LangGraph workflow. North owns the generic stateless
 delegation primitive, callback and cancellation propagation, and subagent event attribution; Lexora
-owns legal roles, schemas, routing descriptions, evidence rules, and persistence. Migration remains
-incremental: retain `prepare_legal_turn` until Case Analyst and Legal Researcher reach behavioral
-parity under the existing conversation evaluation suite.
+owns legal roles, schemas, routing descriptions, evidence rules, and persistence. No model-visible
+preparation compatibility tool remains.
 
-The first migration slice pins North's bounded Subagent contract and registers one tool-less Case
-Analyst with a typed `LegalTurnAssessment` result. On the first internal model call, the Supervisor
-must choose either the existing preparation fast path or Case Analyst delegation. A successful
-non-social assessment is followed by the existing preparation compatibility step; a social result
-can be answered directly. This keeps greetings and simple turns fast while allowing fact-rich turns
-to isolate case framing. Case Analyst cannot retrieve, persist, or answer, and `prepare_legal_turn`
-remains the only current path to factor review, case-profile staging, and retrieval.
+The first migration slice pins North's bounded Subagent contract and registers a tool-less Case Analyst
+with a typed `LegalTurnAssessment`. The Supervisor may route it dynamically, but the application contract
+requires its projection for concrete user-specific case turns. It cannot retrieve, persist, or answer.
+Its result processor invokes `CaseContextService` without another model round trip and returns the
+assessment, staged profile projection, and response contract to the Supervisor.
+
+The second migration slice registers a bounded Legal Researcher with a typed `LegalResearchDossier`.
+Only this specialist receives reviewed-statute and guiding-case search tools. It reports source-grounded
+findings, exact queries, coverage, limitations, and unresolved questions; it cannot write business
+memory, create product Runs or messages, or generate the final response. It can be called directly for
+a simple rule question or after Case Analyst for a fact-dependent issue. Submitted-material retrieval
+remains a bounded direct Supervisor tool until a Material Analyst has a measured reason to exist.
+
+Research `unresolved_questions` are legal-source coverage gaps, not user clarification requests. The
+Supervisor may ask only application-approved `response_contract.follow_up_questions`; it cannot use a
+partial dossier to reopen known factors, denied facts, or an answer target's ordinary premise.
 
 The bounded live check retained one product Run and one final message per turn. A greeting completed
-in about 4.3 seconds without a follow-up question. The marriage-overlap scenario produced grounded
-negative factors, official citations, and a direct two-part answer in about 33 seconds. Equivalent
-wording for “cannot infer bigamy from these facts” was added to the evaluator vocabulary rather than
-adding scenario terms to production routing.
+in about 2.1 seconds without a follow-up question. The marriage-overlap scenario completed in about
+60.2 seconds (first token about 51.9 seconds), updated a three-fact case profile and two answer targets,
+returned four official citations, and asked no redundant follow-up question. Equivalent wording for
+“cannot infer bigamy from these facts” is covered by evaluator vocabulary rather than production routing.
 
 Stream failures carry a stable, non-sensitive product error code. Provider connection failures,
 timeouts, rate limits, and 5xx responses become `provider_unavailable`; they remain failed Runs but
@@ -438,10 +448,15 @@ the personal user to cancel queued or running analysis. A cancelled run cannot l
 by a late model response, and the browser aborts its waiting request after the server records the
 cancellation.
 
-Completed: explicit facts supplied during conversation can be staged through the Lexora case-memory
-tool and committed with a successful Run. Repeated facts are merged without duplication, resolved
+Completed: explicit facts supplied during conversation are staged by the typed Case Analyst result,
+projected through `CaseContextService`, and committed with a successful Run. Repeated facts are merged without duplication, resolved
 information is removed by replacing the outstanding missing-information state, and the UI surfaces
 a lightweight profile update state.
+
+Implemented and live-checked: the Supervisor can dynamically delegate typed case understanding
+and legal research through North's bounded stateless subagent contract. The rejected forced
+Supervisor -> preparation -> Researcher prototype preserved citations but measured roughly 95-101
+seconds to first text, demonstrating that a fixed chain was the wrong abstraction.
 
 1. Add update checks against primary sources while retaining human confirmation.
 2. Surface conflicting or uncertain case-state changes for explicit user confirmation.

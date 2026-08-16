@@ -19,6 +19,8 @@ Lexora 通过连续对话理解用户描述的情况，并将案件背景、当�
 - 使用 North 官方 PostgreSQL Checkpointer 恢复多轮 Agent 上下文；
 - 展示当前分析 Run 状态，并允许用户取消仍在排队或运行中的分析；
 - 使用 North Agent Runtime 调用 OpenAI 兼容模型；
+- 由 Supervisor 编排受限 Case Analyst 和 Legal Researcher；法规与类案原始检索工具只分配给
+  Researcher，子 Agent 不创建额外产品 Run 或用户消息；
 - 使用仓库内独立 package `packages/rag-core` 对材料进行确定性切分，并按当前问题执行
   词法/语义混合检索；
 - 生成带 `[M1:C1]` Chunk 引用的 Markdown 分析；

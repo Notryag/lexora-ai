@@ -36,6 +36,7 @@ class TurnExpectation(BaseModel):
     max_answer_chars: int | None = Field(default=None, ge=1)
     max_questions: int | None = Field(default=None, ge=0)
     min_delta_events: int = Field(default=1, ge=1)
+    require_profile_update: bool = False
     forbidden_factor_states: list[FactorStatePattern] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -447,6 +448,8 @@ def _evaluate_turn(
             f"expected at least {expectation.min_delta_events} delta events, "
             f"got {observation.delta_events}"
         )
+    if expectation.require_profile_update and not observation.result.profile_updated:
+        failures.append("expected case profile update")
     for terms in expectation.required_term_groups:
         if not any(term.casefold() in answer.casefold() for term in terms):
             failures.append(f"answer is missing one of required terms: {terms}")

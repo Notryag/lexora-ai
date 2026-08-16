@@ -46,6 +46,19 @@ class CaseRunService:
             run = await unit_of_work.runs.get_latest_for_thread(self._context, thread.id)
             return _run_status(run) if run else None
 
+    async def get_for_case(self, case_id: UUID, run_id: UUID) -> CaseRun | None:
+        async with self._session_factory() as session:
+            unit_of_work = LexoraUnitOfWork(session)
+            if await unit_of_work.cases.get(self._context, case_id) is None:
+                raise CaseNotFoundError("Case not found")
+            thread = await unit_of_work.threads.get_for_case(self._context, case_id)
+            if thread is None:
+                return None
+            run = await unit_of_work.runs.get(self._context, run_id)
+            if run is None or run.thread_id != thread.id:
+                return None
+            return _run_status(run)
+
     async def cancel_active(self, case_id: UUID) -> CaseRun:
         async with self._session_factory() as session:
             unit_of_work = LexoraUnitOfWork(session)

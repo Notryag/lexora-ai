@@ -526,6 +526,59 @@ async def get_case_run(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
+@router.get(
+    "/cases/{case_id}/runs/{run_id}/events/stream",
+    tags=["case conversations"],
+    response_class=StreamingResponse,
+)
+async def stream_existing_case_run(
+    case_id: UUID,
+    run_id: UUID,
+    http_request: Request,
+    service: Annotated[CaseRunService, Depends(get_case_run_service)],
+    stream_bridge: Annotated[StreamBridge, Depends(get_stream_bridge)],
+    last_event_id: str | None = Header(
+        default=None,
+        alias="Last-Event-ID",
+        pattern=r"^\d{1,20}-\d{1,20}$",
+        max_length=41,
+    ),
+) -> StreamingResponse:
+    try:
+        run = await service.get_for_case(case_id, run_id)
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+
+    async def event_stream():
+        async for entry in stream_bridge.subscribe(
+            str(run_id),
+            last_event_id=last_event_id,
+        ):
+            if await http_request.is_disconnected():
+                return
+            if entry == HEARTBEAT_SENTINEL:
+                yield ": keep-alive\n\n"
+                continue
+            if entry == END_SENTINEL:
+                yield _sse_frame("end", {})
+                return
+            if entry.event == REPLAY_GAP_EVENT:
+                yield _sse_frame("gap", entry.data)
+                continue
+            yield _sse_frame(entry.event, entry.data, event_id=entry.id)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.post(
     "/cases/{case_id}/run/cancel",
     response_model=CaseRun,

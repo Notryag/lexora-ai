@@ -12,6 +12,7 @@ from rag_core import (
     RecursiveFallbackSplitter,
     RetrievalDocument,
     fuse_retrieval_hits,
+    query_terms,
     rank_lexical_documents,
     rank_vector_documents,
 )
@@ -38,6 +39,8 @@ CASE_LAW_SECTIONS = (
     "关联索引",
 )
 CASE_LAW_TOP_K = 5
+CASE_LAW_MAX_CHUNKS_PER_SOURCE = 2
+CASE_LAW_MIN_LEXICAL_SCORE = 3.0
 CASE_LAW_MIN_VECTOR_SCORE = 0.55
 CASE_LAW_STOP_TERMS = {
     "一下",
@@ -140,12 +143,20 @@ def rank_case_law(
         )
         for chunk in chunks
     ]
-    lexical_hits = rank_lexical_documents(
-        query,
-        documents,
-        top_k=candidate_k,
-        stop_terms=CASE_LAW_STOP_TERMS,
+    lexical_terms = query_terms(query, stop_terms=CASE_LAW_STOP_TERMS)
+    minimum_lexical_score = (
+        1.0 if len(lexical_terms) <= 2 else CASE_LAW_MIN_LEXICAL_SCORE
     )
+    lexical_hits = [
+        hit
+        for hit in rank_lexical_documents(
+            query,
+            documents,
+            top_k=candidate_k,
+            stop_terms=CASE_LAW_STOP_TERMS,
+        )
+        if hit.score >= minimum_lexical_score
+    ]
     vector_hits = []
     if query_embedding is not None and embedding_model is not None:
         vector_hits = [
@@ -167,9 +178,20 @@ def rank_case_law(
     rankings = [ranking for ranking in (lexical_hits, vector_hits) if ranking]
     if not rankings:
         return []
-    hits = (
-        fuse_retrieval_hits(rankings, top_k=top_k)
+    ranked_hits = (
+        fuse_retrieval_hits(rankings, top_k=candidate_k)
         if len(rankings) > 1
-        else rankings[0][:top_k]
+        else rankings[0][:candidate_k]
     )
-    return [by_reference[hit.document.id] for hit in hits]
+    result: list[CaseLawChunk] = []
+    source_counts: dict[UUID, int] = {}
+    for hit in ranked_hits:
+        chunk = by_reference[hit.document.id]
+        source_count = source_counts.get(chunk.source_id, 0)
+        if source_count >= CASE_LAW_MAX_CHUNKS_PER_SOURCE:
+            continue
+        result.append(chunk)
+        source_counts[chunk.source_id] = source_count + 1
+        if len(result) == top_k:
+            break
+    return result

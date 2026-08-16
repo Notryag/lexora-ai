@@ -103,6 +103,7 @@ async def test_postgres_case_law_retrieval_hydrates_only_bounded_candidates(monk
     lexical_id = uuid4()
     vector_id = uuid4()
     source_id = uuid4()
+    vector_source_id = uuid4()
     lightweight_chunks = [
         CaseLawChunk(
             id=lexical_id,
@@ -120,7 +121,7 @@ async def test_postgres_case_law_retrieval_hydrates_only_bounded_candidates(monk
         ),
         CaseLawChunk(
             id=vector_id,
-            source_id=source_id,
+            source_id=vector_source_id,
             reference="C1:S2",
             section_label="裁判理由",
             case_number="（2026）测1号",

@@ -18,6 +18,11 @@ export type ConversationStreamActivity = {
   type: string;
   event_type?: string;
   content?: string | null;
+  call_id?: string;
+  caller?: string;
+  kind?: string;
+  parent_call_id?: string;
+  status?: string;
   tool_name?: string;
   subagent_type?: string;
   task_id?: string;

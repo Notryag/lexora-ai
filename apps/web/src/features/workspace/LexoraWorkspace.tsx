@@ -102,7 +102,7 @@ export function LexoraWorkspace() {
           }));
         },
         (activity) => {
-          setActivities((current) => [...current, activity].slice(-12));
+          setActivities((current) => [...current, activity].slice(-256));
         },
         controller.signal,
       );

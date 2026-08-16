@@ -27,6 +27,7 @@ import {
   citedSources,
   presentAssistantMarkdown,
 } from "./citationPresentation";
+import { buildActivityTimeline } from "./activityPresentation";
 import styles from "./ConversationPanel.module.css";
 
 type ConversationPanelProps = {
@@ -68,6 +69,7 @@ export function ConversationPanel({
 }: ConversationPanelProps) {
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const activityTimeline = buildActivityTimeline(activities, isSubmitting, Boolean(error));
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -75,7 +77,7 @@ export function ConversationPanel({
       if (container) container.scrollTop = container.scrollHeight;
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [isSubmitting, messages]);
+  }, [activities, isSubmitting, messages]);
 
   function submit() {
     const message = draft.trim();
@@ -240,44 +242,39 @@ export function ConversationPanel({
             );
           })}
 
-          {activities.length ? (
+          {activityTimeline.length ? (
             <section className={styles.activityTimeline} aria-label="分析过程" aria-live="polite">
               <div className={styles.activityHeader}>
                 <Activity aria-hidden="true" size={15} />
                 <span>分析过程</span>
+                <small>{isSubmitting ? "进行中" : error ? "未完成" : "已完成"}</small>
               </div>
               <ol className={styles.activityList}>
-                {activities.map((activity, index) => {
-                  const terminal = activity.type === "task_completed"
-                    || activity.type === "task_failed"
-                    || activity.type === "task_timed_out"
-                    || activity.type === "tool_completed"
-                    || activity.type === "tool_failed";
-                  const failed = activity.type === "task_failed"
-                    || activity.type === "task_timed_out"
-                    || activity.type === "tool_failed"
-                    || activity.type === "model_failed";
-                  const DetailIcon = activity.type.startsWith("task_") ? Users
-                    : activity.type.startsWith("tool_") ? Wrench
+                {activityTimeline.map((activity) => {
+                  const terminal = activity.state !== "running";
+                  const failed = activity.state === "failed" || activity.state === "timed_out";
+                  const DetailIcon = activity.kind === "subagent" ? Users
+                    : activity.kind === "tool" ? Wrench
                       : Activity;
-                  const detail = activity.subagent_type || activity.tool_name;
                   return (
                     <li
-                      className={`${styles.activityItem} ${terminal ? styles.activityItemTerminal : ""}`}
-                      key={`${activity.event_type ?? activity.type}-${activity.task_id ?? activity.tool_name ?? index}-${index}`}
+                      className={`${styles.activityItem} ${terminal ? styles.activityItemTerminal : ""} ${activity.level ? styles.activityItemNested : ""}`}
+                      key={activity.key}
+                      title={activity.technicalName ? `技术标识：${activity.technicalName}` : undefined}
                     >
                       <span className={`${styles.activityIcon} ${failed ? styles.activityIconFailed : ""}`}>
                         {failed ? <CircleAlert aria-hidden="true" size={14} />
                           : terminal ? <Check aria-hidden="true" size={14} />
                             : <LoaderCircle aria-hidden="true" className={styles.activitySpinner} size={14} />}
                       </span>
-                      <span className={styles.activityText}>{activityLabel(activity.type)}</span>
-                      {detail ? (
-                        <span className={styles.activityDetail}>
-                          <DetailIcon aria-hidden="true" size={12} />
-                          {detail}
-                        </span>
-                      ) : null}
+                      <span className={styles.activityDetail}>
+                        <DetailIcon aria-hidden="true" size={12} />
+                        <span className={styles.activityText}>{activity.title}</span>
+                        {activity.kind === "tool" && activity.callCount > 1
+                          ? <small>{activity.callCount} 次</small>
+                          : null}
+                      </span>
+                      <span className={styles.activityStatus}>{activityStateLabel(activity.state)}</span>
                     </li>
                   );
                 })}
@@ -341,18 +338,11 @@ export function ConversationPanel({
   );
 }
 
-function activityLabel(type: string): string {
+function activityStateLabel(state: "running" | "completed" | "failed" | "timed_out"): string {
   return {
-    model_started: "正在分析",
-    model_completed: "分析步骤已完成",
-    model_failed: "分析过程失败",
-    tool_started: "正在调用工具",
-    tool_completed: "工具调用已完成",
-    tool_failed: "工具调用失败",
-    task_started: "正在执行子任务",
-    task_running: "子任务处理中",
-    task_completed: "子任务已完成",
-    task_failed: "子任务执行失败",
-    task_timed_out: "子任务超时",
-  }[type] ?? "正在处理案件";
+    running: "处理中",
+    completed: "已完成",
+    failed: "失败",
+    timed_out: "已超时",
+  }[state];
 }

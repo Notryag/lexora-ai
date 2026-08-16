@@ -323,6 +323,13 @@
   font-weight: 650;
 }
 
+.activityHeader small {
+  margin-left: auto;
+  color: var(--lexora-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
 .activityList {
   display: grid;
   gap: 7px;
@@ -339,6 +346,22 @@
   color: var(--lexora-text-muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.activityItemNested {
+  position: relative;
+  margin-left: 25px;
+}
+
+.activityItemNested::before {
+  position: absolute;
+  top: -8px;
+  bottom: 50%;
+  left: -16px;
+  width: 10px;
+  border-bottom: 1px solid var(--lexora-border-strong);
+  border-left: 1px solid var(--lexora-border-strong);
+  content: "";
 }
 
 .activityItemTerminal {
@@ -378,6 +401,18 @@
   color: var(--lexora-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.activityDetail small {
+  color: var(--lexora-text-muted);
+  font-size: 11px;
+}
+
+.activityStatus {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--lexora-text-muted);
+  font-size: 11px;
 }
 
 @keyframes activity-spin {

@@ -131,22 +131,70 @@ test("persists material and continues a cited legal conversation", async ({ page
         },
       );
       await route.fulfill({
-        contentType: "application/x-ndjson",
+        contentType: "text/event-stream",
         body: [
-          JSON.stringify({ type: "delta", delta: "现有工资记录能够" }),
-          JSON.stringify({ type: "delta", delta: "支持拖欠工资的初步主张 [M1:C1]，工资支付规则见 [L1234567890abcdef:C30]。" }),
-          JSON.stringify({ type: "complete", result: {
-          case_id: caseId,
-          thread_id: threadId,
-          run_id: runId,
-          assistant_message: messages[1].content as string,
-          material_count: 1,
-          legal_citations: messages[1].legal_citations,
-          case_law_citations: [],
-          profile_updated: true,
-          case_profile: profile,
+          sse("metadata", { run_id: runId, thread_id: threadId }),
+          sse("custom", {
+            type: "tool_started",
+            event_type: "tool.started",
+            tool_name: "delegate_legal_researcher",
+            call_id: "research-task",
+          }),
+          sse("custom", {
+            type: "task_started",
+            event_type: "subagent.start",
+            subagent_type: "legal_researcher",
+            task_id: "research-task",
+          }),
+          sse("custom", {
+            type: "tool_started",
+            event_type: "tool.started",
+            tool_name: "search_legal_authorities",
+            call_id: "authority-search-1",
+            caller: "subagent:legal_researcher",
+          }),
+          sse("custom", {
+            type: "tool_completed",
+            event_type: "tool.completed",
+            tool_name: "search_legal_authorities",
+            call_id: "authority-search-1",
+            caller: "subagent:legal_researcher",
+          }),
+          sse("custom", {
+            type: "task_running",
+            event_type: "subagent.step",
+            tool_name: "search_legal_authorities",
+            task_id: "research-task",
+            kind: "tool",
+          }),
+          sse("custom", {
+            type: "tool_completed",
+            event_type: "tool.completed",
+            tool_name: "delegate_legal_researcher",
+            call_id: "research-task",
+          }),
+          sse("custom", {
+            type: "task_completed",
+            event_type: "subagent.end",
+            subagent_type: "legal_researcher",
+            task_id: "research-task",
+            status: "completed",
+          }),
+          sse("messages", { delta: "现有工资记录能够" }),
+          sse("messages", { delta: "支持拖欠工资的初步主张 [M1:C1]，工资支付规则见 [L1234567890abcdef:C30]。" }),
+          sse("complete", { result: {
+            case_id: caseId,
+            thread_id: threadId,
+            run_id: runId,
+            assistant_message: messages[1].content as string,
+            material_count: 1,
+            legal_citations: messages[1].legal_citations,
+            case_law_citations: [],
+            profile_updated: true,
+            case_profile: profile,
           } }),
-        ].join("\n") + "\n",
+          sse("end", {}),
+        ].join(""),
       });
       return;
     }
@@ -178,6 +226,11 @@ test("persists material and continues a cited legal conversation", async ({ page
   await expect(page.getByText("[1]", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("L1234567890abcdef:C30", { exact: true })).toHaveCount(0);
   await expect(page.getByText("未在正文使用的法规", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("法律资料研究", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("检索法规依据", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("子任务处理中", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("delegate_legal_researcher", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("分析过程").getByText("已完成", { exact: true })).toHaveCount(3);
   await expect(page.getByRole("button", { name: "档案 4，已更新" })).toBeVisible();
   await page.getByRole("button", { name: "档案 4，已更新" }).click();
   await expect(page.getByRole("textbox", { name: "当事人陈述" })).toHaveValue(
@@ -192,3 +245,7 @@ test("persists material and continues a cited legal conversation", async ({ page
   ]);
   expect(conversationRequests.some((item) => item.endsWith("/run"))).toBe(false);
 });
+
+function sse(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}

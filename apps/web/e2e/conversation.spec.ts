@@ -290,12 +290,18 @@ test("persists material and continues a cited legal conversation", async ({ page
   await expect(page.getByText("[1]", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("L1234567890abcdef:C30", { exact: true })).toHaveCount(0);
   await expect(page.getByText("未在正文使用的法规", { exact: true })).toHaveCount(0);
+  const activityToggle = page.getByRole("button", { name: /分析过程/ });
+  await expect(activityToggle).toHaveAttribute("aria-expanded", "false");
+  await activityToggle.click();
   await expect(page.getByText("法律研究 Agent", { exact: true })).toHaveCount(1);
   await expect(page.getByText("检索法规依据", { exact: true })).toHaveCount(1);
   await expect(page.getByText("子任务处理中", { exact: true })).toHaveCount(0);
   await expect(page.getByText("delegate_legal_researcher", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("分析过程").getByText("已完成", { exact: true })).toHaveCount(3);
   await page.reload();
+  const restoredActivityToggle = page.getByRole("button", { name: /分析过程/ });
+  await expect(restoredActivityToggle).toHaveAttribute("aria-expanded", "false");
+  await restoredActivityToggle.click();
   await expect(page.getByText("法律研究 Agent", { exact: true })).toHaveCount(1);
   await expect(page.getByText("检索法规依据", { exact: true })).toHaveCount(1);
   await expect(page.getByLabel("分析过程").getByText("已完成", { exact: true })).toHaveCount(3);

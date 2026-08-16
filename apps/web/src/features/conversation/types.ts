@@ -14,13 +14,18 @@ export type ChatMessage = {
   caseLawCitations?: CaseLawCitation[];
 };
 
+export type ConversationActivityState = "running" | "completed" | "failed";
+
 export type ConversationStreamActivity = {
   type: string;
   event_type?: string | null;
+  call_index?: number | null;
   content?: string | null;
   call_id?: string | null;
   caller?: string | null;
+  description?: string | null;
   kind?: string | null;
+  latency_ms?: number | null;
   parent_call_id?: string | null;
   status?: string | null;
   tool_name?: string | null;

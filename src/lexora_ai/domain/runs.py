@@ -48,10 +48,13 @@ class CaseRunActivity(BaseModel):
     seq: int = Field(ge=1)
     type: CaseRunActivityType
     event_type: str
+    call_index: int | None = Field(default=None, ge=1)
     content: str | None = None
     call_id: str | None = None
     caller: str | None = None
+    description: str | None = None
     kind: str | None = None
+    latency_ms: int | None = Field(default=None, ge=0)
     parent_call_id: str | None = None
     status: str | None = None
     tool_name: str | None = None

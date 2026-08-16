@@ -1,0 +1,165 @@
+.timeline {
+  margin: 0 0 var(--space-5) 42px;
+  padding: 10px 0 1px;
+  border-top: 1px solid var(--lexora-border);
+  border-bottom: 1px solid var(--lexora-border);
+}
+
+.header {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--lexora-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+}
+
+.header small {
+  margin-left: auto;
+  color: var(--lexora-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.toggle {
+  transition: transform 160ms ease;
+}
+
+.toggleExpanded {
+  transform: rotate(180deg);
+}
+
+.list {
+  display: grid;
+  gap: 7px;
+  margin: 9px 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--lexora-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.itemNested {
+  position: relative;
+  margin-left: 25px;
+}
+
+.itemNested::before {
+  position: absolute;
+  top: -8px;
+  bottom: 50%;
+  left: -16px;
+  width: 10px;
+  border-bottom: 1px solid var(--lexora-border-strong);
+  border-left: 1px solid var(--lexora-border-strong);
+  content: "";
+}
+
+.itemTerminal {
+  color: var(--lexora-text);
+}
+
+.icon {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--lexora-primary-soft);
+  color: var(--lexora-primary);
+}
+
+.iconFailed {
+  background: var(--lexora-danger-soft);
+  color: var(--lexora-danger);
+}
+
+.spinner {
+  animation: activity-spin 900ms linear infinite;
+}
+
+.text {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.detail {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 4px;
+  overflow: hidden;
+  color: var(--lexora-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.description {
+  overflow: hidden;
+  color: var(--lexora-text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail small {
+  color: var(--lexora-text-muted);
+  font-size: 11px;
+}
+
+.status {
+  display: grid;
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--lexora-text-muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.status small {
+  color: var(--lexora-text-muted);
+  font-size: 10px;
+}
+
+@keyframes activity-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 720px) {
+  .timeline {
+    margin-left: 38px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 1800ms;
+  }
+}

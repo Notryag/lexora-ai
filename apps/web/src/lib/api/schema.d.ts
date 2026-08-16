@@ -567,14 +567,19 @@ export interface components {
             type: components["schemas"]["CaseRunActivityType"];
             /** Event Type */
             event_type: string;
+            call_index?: number | null;
             /** Content */
             content?: string | null;
             /** Call Id */
             call_id?: string | null;
             /** Caller */
             caller?: string | null;
+            /** Description */
+            description?: string | null;
             /** Kind */
             kind?: string | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
             /** Parent Call Id */
             parent_call_id?: string | null;
             /** Status */

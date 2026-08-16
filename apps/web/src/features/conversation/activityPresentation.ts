@@ -6,21 +6,28 @@ export type ActivityTimelineItem = {
   key: string;
   kind: "model" | "subagent" | "tool";
   title: string;
+  description?: string;
   technicalName?: string;
   state: ActivityDisplayState;
   level: 0 | 1;
   parentKey?: string;
-  callCount: number;
+  durationMs?: number;
   order: number;
 };
 
-type WorkingItem = Omit<ActivityTimelineItem, "state" | "callCount"> & {
-  calls: Map<string, ActivityDisplayState>;
+type WorkingItem = Omit<ActivityTimelineItem, "state" | "durationMs"> & {
+  runningTitle?: string;
+  calls: Map<string, { state: ActivityDisplayState; durationMs?: number }>;
 };
 
 const SUBAGENT_NAMES: Record<string, string> = {
   case_analyst: "案件分析 Agent",
   legal_researcher: "法律研究 Agent",
+};
+
+const SUBAGENT_DESCRIPTIONS: Record<string, string> = {
+  case_analyst: "梳理用户陈述，形成可复用的案件画像",
+  legal_researcher: "检索并核验与当前问题直接相关的法规和案例",
 };
 
 const TOOL_NAMES: Record<string, string> = {
@@ -30,52 +37,65 @@ const TOOL_NAMES: Record<string, string> = {
   search_legal_authorities: "检索法规依据",
 };
 
+const TOOL_DESCRIPTIONS: Record<string, string> = {
+  calculate_employment_termination_compensation: "根据已确认的工资和工作年限执行确定性计算",
+  search_case_materials: "从当前案件材料中定位与问题相关的内容",
+  search_guiding_cases: "查找事实结构相近的已审核官方案例",
+  search_legal_authorities: "查找直接支持当前问题的有效法规条文",
+};
+
 export function buildActivityTimeline(
   activities: ConversationStreamActivity[],
   isRunning: boolean,
   hasError: boolean,
 ): ActivityTimelineItem[] {
   const items = new Map<string, WorkingItem>();
-  const callersWithToolWork = new Set<string>();
+  const taskKeysBySubagent = new Map<string, string>();
   let operationalWorkSeen = false;
 
   activities.forEach((activity, index) => {
     const eventType = activity.event_type ?? activity.type;
     if (eventType === "subagent.step" || activity.type === "task_running") return;
 
-    const caller = activity.caller ?? "unknown";
+    rememberSubagentTask(activity, taskKeysBySubagent);
     const presentation = activityPresentation(
       activity,
+      index,
       operationalWorkSeen,
-      callersWithToolWork,
+      taskKeysBySubagent,
     );
     if (!presentation) return;
     if (presentation.kind !== "model") operationalWorkSeen = true;
-    if (
-      isToolEvent(eventType, activity.type)
-      && caller.startsWith("subagent:")
-      && !activity.tool_name?.startsWith("delegate_")
-    ) {
-      callersWithToolWork.add(caller);
-    }
 
     const existing = items.get(presentation.key);
-    const item = existing ?? {
-      ...presentation,
-      order: index,
-      calls: new Map<string, ActivityDisplayState>(),
-    };
-    item.calls.set(activityIdentity(activity, index), activityState(activity));
+    const item = existing ?? { ...presentation, order: index, calls: new Map() };
+    if (existing) {
+      item.description = activity.description ?? existing.description;
+      item.runningTitle = presentation.runningTitle ?? existing.runningTitle;
+    }
+    item.calls.set(activityIdentity(activity, index), {
+      state: activityState(activity),
+      ...(typeof activity.latency_ms === "number"
+        ? { durationMs: activity.latency_ms }
+        : {}),
+    });
     items.set(presentation.key, item);
   });
 
   const timeline = [...items.values()]
     .sort((left, right) => left.order - right.order)
-    .map(({ calls, ...item }) => ({
-      ...item,
-      state: finalState(calls, isRunning, hasError),
-      callCount: calls.size,
-    }));
+    .map(({ calls, runningTitle, ...item }) => {
+      const state = finalState(calls, isRunning, hasError);
+      const durations = [...calls.values()]
+        .map((call) => call.durationMs)
+        .filter((duration): duration is number => typeof duration === "number");
+      return {
+        ...item,
+        title: state === "running" && runningTitle ? runningTitle : item.title,
+        state,
+        ...(durations.length ? { durationMs: Math.max(...durations) } : {}),
+      };
+    });
   const parentKeys = new Set(timeline.filter((item) => !item.parentKey).map((item) => item.key));
   return [
     ...timeline.flatMap((item) => item.parentKey
@@ -87,8 +107,9 @@ export function buildActivityTimeline(
 
 function activityPresentation(
   activity: ConversationStreamActivity,
+  index: number,
   operationalWorkSeen: boolean,
-  callersWithToolWork: Set<string>,
+  taskKeysBySubagent: Map<string, string>,
 ): Omit<WorkingItem, "calls" | "order"> | null {
   const eventType = activity.event_type ?? activity.type;
   const delegatedSubagent = activity.tool_name?.startsWith("delegate_")
@@ -97,10 +118,15 @@ function activityPresentation(
   const subagentName = activity.subagent_type ?? delegatedSubagent;
 
   if (subagentName) {
+    const taskKey = subagentTaskKey(activity, subagentName);
     return {
-      key: `subagent:${subagentName}`,
+      key: taskKey,
       kind: "subagent",
       title: SUBAGENT_NAMES[subagentName] ?? "专业分析 Agent",
+      runningTitle: `正在调用${SUBAGENT_NAMES[subagentName] ?? "专业分析 Agent"}`,
+      description: activity.description
+        ?? SUBAGENT_DESCRIPTIONS[subagentName]
+        ?? "执行主 Agent 委派的专业分析任务",
       technicalName: subagentName,
       level: 0,
     };
@@ -108,37 +134,40 @@ function activityPresentation(
 
   if (isToolEvent(eventType, activity.type) && activity.tool_name) {
     const caller = activity.caller ?? "unknown";
+    const callerSubagent = subagentNameFromCaller(caller);
+    const parentKey = callerSubagent
+      ? activity.task_id
+        ? `subagent:${activity.task_id}`
+        : taskKeysBySubagent.get(callerSubagent)
+      : undefined;
     return {
-      key: `tool:${caller}:${activity.tool_name}`,
+      key: `tool:${activity.call_id ?? `${caller}:${activity.tool_name}:${index}`}`,
       kind: "tool",
       title: TOOL_NAMES[activity.tool_name] ?? "执行辅助工具",
+      runningTitle: `正在${TOOL_NAMES[activity.tool_name] ?? "执行辅助工具"}`,
+      description: activity.description ?? TOOL_DESCRIPTIONS[activity.tool_name],
       technicalName: activity.tool_name,
-      level: caller.startsWith("subagent:") ? 1 : 0,
-      ...(caller.startsWith("subagent:")
-        ? { parentKey: `subagent:${caller.slice("subagent:".length)}` }
-        : {}),
+      level: callerSubagent ? 1 : 0,
+      ...(parentKey ? { parentKey } : {}),
     };
   }
 
   if (isModelEvent(eventType, activity.type)) {
     const caller = activity.caller ?? "unknown";
-    if (caller.startsWith("subagent:")) {
-      const subagentName = caller.slice("subagent:".length);
-      const phase = callersWithToolWork.has(caller) ? "synthesis" : "analysis";
-      return {
-        key: `model:${caller}:${phase}`,
-        kind: "model",
-        title: subagentModelPhaseTitle(subagentName, phase),
-        technicalName: caller,
-        level: 1,
-        parentKey: `subagent:${subagentName}`,
-      };
-    }
-    const phase = operationalWorkSeen ? "synthesis" : "analysis";
+    if (caller.startsWith("subagent:") || caller.startsWith("middleware:")) return null;
+    const phase = activity.call_index === 1 || (!activity.call_index && !operationalWorkSeen)
+      ? "analysis"
+      : "synthesis";
     return {
       key: `model:${phase}`,
       kind: "model",
-      title: phase === "synthesis" ? "主 Agent 整理分析结论" : "主 Agent 理解问题",
+      title: phase === "synthesis" ? "主 Agent 核对结果并组织答复" : "主 Agent 判断处理路径",
+      runningTitle: phase === "synthesis"
+        ? "主 Agent 正在核对结果并组织答复"
+        : "主 Agent 正在判断处理路径",
+      description: phase === "synthesis"
+        ? "检查案件画像和研究依据，决定继续处理或形成最终回答"
+        : "识别问题类型，并判断需要调用哪些专业 Agent 或工具",
       level: 0,
     };
   }
@@ -146,15 +175,26 @@ function activityPresentation(
   return null;
 }
 
-function subagentModelPhaseTitle(
+function rememberSubagentTask(
+  activity: ConversationStreamActivity,
+  taskKeysBySubagent: Map<string, string>,
+): void {
+  const delegatedSubagent = activity.tool_name?.startsWith("delegate_")
+    ? activity.tool_name.slice("delegate_".length)
+    : null;
+  const subagentName = activity.subagent_type ?? delegatedSubagent;
+  if (subagentName) taskKeysBySubagent.set(subagentName, subagentTaskKey(activity, subagentName));
+}
+
+function subagentTaskKey(
+  activity: ConversationStreamActivity,
   subagentName: string,
-  phase: "analysis" | "synthesis",
 ): string {
-  if (subagentName === "case_analyst") return "提取并核对案件要素";
-  if (subagentName === "legal_researcher") {
-    return phase === "synthesis" ? "整理检索到的法律依据" : "规划法律检索范围";
-  }
-  return phase === "synthesis" ? "整理专业分析结果" : "执行专业分析";
+  return `subagent:${activity.task_id ?? activity.call_id ?? `legacy:${subagentName}`}`;
+}
+
+function subagentNameFromCaller(caller: string): string | null {
+  return caller.startsWith("subagent:") ? caller.slice("subagent:".length) : null;
 }
 
 function activityIdentity(activity: ConversationStreamActivity, index: number): string {
@@ -179,11 +219,11 @@ function activityState(activity: ConversationStreamActivity): ActivityDisplaySta
 }
 
 function finalState(
-  calls: Map<string, ActivityDisplayState>,
+  calls: Map<string, { state: ActivityDisplayState }>,
   isRunning: boolean,
   hasError: boolean,
 ): ActivityDisplayState {
-  const states = [...calls.values()];
+  const states = [...calls.values()].map((call) => call.state);
   if (states.includes("running")) {
     if (isRunning) return "running";
     return hasError ? "failed" : "completed";

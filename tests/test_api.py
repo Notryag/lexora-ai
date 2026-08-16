@@ -268,10 +268,7 @@ async def test_case_conversation_run_continues_after_post_stream_disconnect() ->
 
     service.release.set()
     await asyncio.wait_for(service.completed.wait(), timeout=1)
-    replay = [
-        event
-        async for event in bridge.subscribe(run_id, last_event_id=str(first_event_id))
-    ]
+    replay = [event async for event in bridge.subscribe(run_id, last_event_id=str(first_event_id))]
 
     assert service.cancelled is False
     assert [event.event for event in replay] == ["messages", "__end__"]
@@ -321,10 +318,13 @@ def test_case_run_activities_returns_persisted_safe_projection() -> None:
                 "seq": 3,
                 "type": "tool_completed",
                 "event_type": "tool.completed",
+                "call_index": None,
                 "content": "工具调用已完成",
                 "call_id": "search-1",
                 "caller": "subagent:legal_researcher",
+                "description": None,
                 "kind": None,
+                "latency_ms": None,
                 "parent_call_id": None,
                 "status": None,
                 "tool_name": "search_legal_authorities",

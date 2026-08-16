@@ -12,6 +12,7 @@ test("merges delegation transport and subagent lifecycle into one Chinese row", 
     activity("task_started", "subagent.start", {
       subagent_type: "legal_researcher",
       task_id: "research-task",
+      description: "核验劳动关系的法律依据",
     }),
     activity("task_running", "subagent.step", {
       task_id: "research-task",
@@ -25,51 +26,65 @@ test("merges delegation transport and subagent lifecycle into one Chinese row", 
       subagent_type: "legal_researcher",
       task_id: "research-task",
       status: "completed",
+      latency_ms: 1_234,
     }),
   ], false, false);
 
   assert.deepEqual(timeline, [{
-    key: "subagent:legal_researcher",
+    key: "subagent:research-task",
     kind: "subagent",
     title: "法律研究 Agent",
+    description: "核验劳动关系的法律依据",
     technicalName: "legal_researcher",
     state: "completed",
     level: 0,
-    callCount: 1,
+    durationMs: 1_234,
     order: 0,
   }]);
 });
 
-test("groups concurrent calls to the same subagent tool until every call completes", () => {
+test("keeps repeated tool calls separate and merges each call with its terminal event", () => {
   const inProgress = [
     activity("tool_started", "tool.started", {
       tool_name: "search_legal_authorities",
       call_id: "search-1",
       caller: "subagent:legal_researcher",
+      task_id: "research-task",
+      description: "检索“劳动合同解除条件”相关的法规依据",
     }),
     activity("tool_started", "tool.started", {
       tool_name: "search_legal_authorities",
       call_id: "search-2",
       caller: "subagent:legal_researcher",
+      task_id: "research-task",
+      description: "检索“违法解除赔偿金”相关的法规依据",
     }),
     activity("tool_completed", "tool.completed", {
       tool_name: "search_legal_authorities",
       call_id: "search-1",
       caller: "subagent:legal_researcher",
+      task_id: "research-task",
     }),
   ];
 
-  assert.deepEqual(buildActivityTimeline(inProgress, true, false)[0], {
-    key: "tool:subagent:legal_researcher:search_legal_authorities",
-    kind: "tool",
-    title: "检索法规依据",
-    technicalName: "search_legal_authorities",
-    state: "running",
-    level: 1,
-    parentKey: "subagent:legal_researcher",
-    callCount: 2,
-    order: 0,
-  });
+  const timeline = buildActivityTimeline(inProgress, true, false);
+  assert.deepEqual(timeline.map(({ key, state, description }) => ({
+    key,
+    state,
+    description,
+  })), [
+    {
+      key: "tool:search-1",
+      state: "completed",
+      description: "检索“劳动合同解除条件”相关的法规依据",
+    },
+    {
+      key: "tool:search-2",
+      state: "running",
+      description: "检索“违法解除赔偿金”相关的法规依据",
+    },
+  ]);
+  assert.equal(timeline[0].parentKey, "subagent:research-task");
 
   const completed = [
     ...inProgress,
@@ -77,9 +92,13 @@ test("groups concurrent calls to the same subagent tool until every call complet
       tool_name: "search_legal_authorities",
       call_id: "search-2",
       caller: "subagent:legal_researcher",
+      task_id: "research-task",
     }),
   ];
-  assert.equal(buildActivityTimeline(completed, true, false)[0].state, "completed");
+  assert.deepEqual(
+    buildActivityTimeline(completed, true, false).map((item) => item.state),
+    ["completed", "completed"],
+  );
 });
 
 test("closes an orphan running state when the product run has completed", () => {
@@ -95,7 +114,7 @@ test("closes an orphan running state when the product run has completed", () => 
   assert.equal(timeline[0].title, "检索案件材料");
 });
 
-test("shows subagent model work as a controlled nested stage", () => {
+test("does not expose subagent model turns as invented user-facing phases", () => {
   const timeline = buildActivityTimeline([
     activity("model_started", "model.started", {
       call_id: "supervisor-1",
@@ -116,12 +135,11 @@ test("shows subagent model work as a controlled nested stage", () => {
   ], false, false);
 
   assert.deepEqual(timeline.map(({ title, level }) => ({ title, level })), [
-    { title: "主 Agent 理解问题", level: 0 },
-    { title: "提取并核对案件要素", level: 1 },
+    { title: "主 Agent 判断处理路径", level: 0 },
   ]);
 });
 
-test("separates legal research planning, tool use, and synthesis", () => {
+test("shows real subagent and tool activity without inferred model phases", () => {
   const timeline = buildActivityTimeline([
     activity("task_started", "subagent.start", {
       subagent_type: "legal_researcher",
@@ -130,32 +148,35 @@ test("separates legal research planning, tool use, and synthesis", () => {
     activity("model_started", "model.started", {
       call_id: "research-plan",
       caller: "subagent:legal_researcher",
+      task_id: "research-task",
     }),
     activity("model_completed", "model.completed", {
       call_id: "research-plan",
       caller: "subagent:legal_researcher",
+      task_id: "research-task",
     }),
     activity("tool_started", "tool.started", {
       tool_name: "search_legal_authorities",
       call_id: "search-1",
       caller: "subagent:legal_researcher",
+      task_id: "research-task",
     }),
     activity("tool_completed", "tool.completed", {
       tool_name: "search_legal_authorities",
       call_id: "search-1",
       caller: "subagent:legal_researcher",
+      task_id: "research-task",
     }),
     activity("model_started", "model.started", {
       call_id: "research-synthesis",
       caller: "subagent:legal_researcher",
+      task_id: "research-task",
     }),
   ], true, false);
 
   assert.deepEqual(timeline.map(({ title, state, level }) => ({ title, state, level })), [
-    { title: "法律研究 Agent", state: "running", level: 0 },
-    { title: "规划法律检索范围", state: "completed", level: 1 },
+    { title: "正在调用法律研究 Agent", state: "running", level: 0 },
     { title: "检索法规依据", state: "completed", level: 1 },
-    { title: "整理检索到的法律依据", state: "running", level: 1 },
   ]);
 });
 

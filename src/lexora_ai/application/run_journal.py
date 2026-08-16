@@ -185,6 +185,8 @@ def _safe_payload(
         "call_id",
         "call_index",
         "caller",
+        "description",
+        "latency_ms",
         "parent_call_id",
         "tool_name",
         "task_id",
@@ -195,7 +197,6 @@ def _safe_payload(
         "truncated",
         "result_truncated",
         "error_type",
-        "latency_ms",
         "usage",
     }
     payload: dict[str, Any] = {"runtime_event": event_type}
@@ -218,9 +219,32 @@ def _safe_payload(
                 if safe_usage:
                     payload[key] = safe_usage
             continue
+        if key == "description" and isinstance(value, str):
+            value = " ".join(value.split())[:120]
         if isinstance(value, (str, int, float, bool)):
             payload[key] = value
+    if event_type == "tool.started" and "description" not in payload:
+        description = _tool_activity_description(
+            _text(metadata.get("tool_name")),
+            _text(content.get("query")),
+        )
+        if description is not None:
+            payload["description"] = description
     return payload
+
+
+def _tool_activity_description(tool_name: str | None, query: str | None) -> str | None:
+    if not query:
+        return None
+    label = {
+        "search_case_materials": "案件材料",
+        "search_legal_authorities": "法规依据",
+        "search_guiding_cases": "相关案例",
+    }.get(tool_name)
+    if label is None:
+        return None
+    preview = " ".join(query.split())[:80]
+    return f"检索“{preview}”相关的{label}"
 
 
 def _activity_fields(

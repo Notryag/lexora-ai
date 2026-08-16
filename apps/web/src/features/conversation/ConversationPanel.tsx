@@ -1,33 +1,31 @@
 "use client";
 
 import {
-  Activity,
-  Bot,
   BookOpenCheck,
   BookOpenText,
-  Check,
   ClipboardList,
   CircleCheck,
-  CircleAlert,
   ChevronDown,
   Download,
   ExternalLink,
-  LoaderCircle,
   Scale,
   SendHorizontal,
   Square,
-  Wrench,
 } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 
-import type { ChatMessage, ConversationStreamActivity } from "./types";
+import { ActivityTimeline } from "./ActivityTimeline";
+import type {
+  ChatMessage,
+  ConversationActivityState,
+  ConversationStreamActivity,
+} from "./types";
 import {
   citationMarkers,
   citedSources,
   presentAssistantMarkdown,
 } from "./citationPresentation";
-import { buildActivityTimeline } from "./activityPresentation";
 import styles from "./ConversationPanel.module.css";
 
 type ConversationPanelProps = {
@@ -40,7 +38,7 @@ type ConversationPanelProps = {
   profileUpdated: boolean;
   messages: ChatMessage[];
   activities: ConversationStreamActivity[];
-  activityState: "running" | "completed" | "failed";
+  activityState: ConversationActivityState;
   onCaseTitleChange: (value: string) => void;
   onCaseTitleCommit: () => void;
   onOpenMaterials: () => void;
@@ -71,11 +69,6 @@ export function ConversationPanel({
 }: ConversationPanelProps) {
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const activityTimeline = buildActivityTimeline(
-    activities,
-    activityState === "running",
-    activityState === "failed",
-  );
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -248,45 +241,7 @@ export function ConversationPanel({
             );
           })}
 
-          {activityTimeline.length ? (
-            <section className={styles.activityTimeline} aria-label="分析过程" aria-live="polite">
-              <div className={styles.activityHeader}>
-                <Activity aria-hidden="true" size={15} />
-                <span>分析过程</span>
-                <small>{activityState === "running" ? "进行中" : activityState === "failed" ? "未完成" : "已完成"}</small>
-              </div>
-              <ol className={styles.activityList}>
-                {activityTimeline.map((activity) => {
-                  const terminal = activity.state !== "running";
-                  const failed = activity.state === "failed" || activity.state === "timed_out";
-                  const DetailIcon = activity.kind === "subagent" ? Bot
-                    : activity.kind === "tool" ? Wrench
-                      : Activity;
-                  return (
-                    <li
-                      className={`${styles.activityItem} ${terminal ? styles.activityItemTerminal : ""} ${activity.level ? styles.activityItemNested : ""}`}
-                      key={activity.key}
-                      title={activity.technicalName ? `技术标识：${activity.technicalName}` : undefined}
-                    >
-                      <span className={`${styles.activityIcon} ${failed ? styles.activityIconFailed : ""}`}>
-                        {failed ? <CircleAlert aria-hidden="true" size={14} />
-                          : terminal ? <Check aria-hidden="true" size={14} />
-                            : <LoaderCircle aria-hidden="true" className={styles.activitySpinner} size={14} />}
-                      </span>
-                      <span className={styles.activityDetail}>
-                        <DetailIcon aria-hidden="true" size={12} />
-                        <span className={styles.activityText}>{activity.title}</span>
-                        {activity.kind === "tool" && activity.callCount > 1
-                          ? <small>{activity.callCount} 次</small>
-                          : null}
-                      </span>
-                      <span className={styles.activityStatus}>{activityStateLabel(activity.state)}</span>
-                    </li>
-                  );
-                })}
-              </ol>
-            </section>
-          ) : null}
+          <ActivityTimeline activities={activities} state={activityState} />
 
           {isSubmitting && messages.at(-1)?.role !== "assistant" ? (
             <article className={`${styles.message} ${styles.assistant}`} aria-label="正在分析">
@@ -342,13 +297,4 @@ export function ConversationPanel({
       </div>
     </section>
   );
-}
-
-function activityStateLabel(state: "running" | "completed" | "failed" | "timed_out"): string {
-  return {
-    running: "处理中",
-    completed: "已完成",
-    failed: "失败",
-    timed_out: "已超时",
-  }[state];
 }

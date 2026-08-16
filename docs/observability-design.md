@@ -45,6 +45,17 @@ Run events API -> reload / history / audit
 - `agent_runs.status` 仍是 Run 生命周期的权威来源；
 - `message.human` 和 `message.ai` 仍是用户对话历史的权威来源。
 
+一次调用的展示身份必须来自真实运行标识：
+
+```text
+Subagent: task_id
+Tool:     call_id
+Model:    call_id（默认仅作诊断，用户层可以折叠为主 Agent 阶段）
+```
+
+同一次调用的 started/completed/error 更新同一行；同名工具的两次调用不能因为名称相同而合并。
+委派工具与它产生的 Subagent 共用 `task_id`，用户层只显示 Subagent，不重复显示底层 delegate 工具。
+
 已确认本阶段把 NDJSON 切换为 DeerFlow 式 SSE，并接入 North `StreamBridge`、heartbeat、事件 ID、
 `Last-Event-ID` 和 gap recovery。
 
@@ -65,6 +76,8 @@ Run events API -> reload / history / audit
 - terminal event 立即 flush，普通 step 批量写入；
 - 事件目录由机器可读 JSON Schema 和代码 catalog 共同约束；
 - consumer 忽略未知事件、字段和可选 payload。
+- 子 Agent 内部的 model/tool 事件显式携带 `task_id`，前端不得通过事件时间或 `caller` 名称猜测父子关系；
+- 同名工具的不同 `call_id` 保持为不同调用，只合并同一 `call_id` 的开始和终态。
 
 ### 3.2 当前暂定差异
 
@@ -74,6 +87,7 @@ Run events API -> reload / history / audit
 | 工具生命周期 | 工具调用意图不是一等事件，官方文档列为 known gap | 新增 `tool.start / tool.end / tool.error` | 用户明确要求看到调用了什么工具、是否成功，仅保存 tool result 不够 |
 | Subagent AI step 文本 | 可在 Subtask Card 展示中间 AI 文本 | schema 对齐，但用户层 `text` 只允许受控阶段文案或空值 | 法律咨询包含敏感事实，也不能把自由中间推理当成“思维链”展示 |
 | 产品展示 | 通用 Subtask Card | Lexora 的紧凑分析时间线 | 角色少、流程短，且当前工作台不应引入卡片嵌套；数据契约仍保持兼容 |
+| 完成后展开状态 | Subtask Card 默认折叠，主处理区保留最近步骤 | 运行中和失败时展开，最终回答完成后自动收起，可手动重开 | 用户先阅读法律答复，同时保留可审计路径 |
 
 这些差异是当前实施选择，不是永久架构承诺。每项都必须保持适配边界和测试，后续继续跟踪 DeerFlow
 演进；如果 DeerFlow 补齐一等工具事件、敏感内容投影或兼容的扩展信封，应重新评估并优先收敛。
@@ -198,7 +212,8 @@ Legal Researcher
 ```
 
 不能用时间顺序或工具名称猜测父子关系。North 必须保存 callback `parent_run_id`，并在 Subagent
-调用边界传播稳定的 `task_id`。
+调用边界把稳定的 `task_id` 传播到子 Agent 内部的 model/tool 事件。`caller` 仅用于角色标签和
+旧事件兼容，不再作为新事件的主要关联键。
 
 ### 6.3 第一版事件目录
 
@@ -409,6 +424,11 @@ GET /api/v1/cases/{case_id}/runs/{run_id}/events
 - 失败步骤保留，Run 仍可能由 Supervisor 降级完成；
 - Run 结束后默认折叠为“分析过程 · N 个步骤 · X 秒”。
 
+当前实现使用 DeerFlow 的短 `description` 与任务生命周期分离方式。运行中显示动作句，例如
+“主 Agent 正在判断处理路径”“正在调用案件分析 Agent”“正在检索法规依据”；展开后显示固定的
+安全阶段说明和终态耗时。模型生成的短 description 最多保留 120 字，不保存或展示完整任务参数。
+Run 成功后活动区自动收起，历史恢复默认收起；失败时保持展开，避免隐藏错误步骤。
+
 ### 11.2 历史恢复
 
 - `complete` 前端保留本轮活动摘要；
@@ -496,3 +516,20 @@ UI 名称使用“分析过程”或“执行记录”，不用“思维链”�
 
 已确认本阶段同步接入 DeerFlow 式 SSE 和 North `StreamBridge`。当前四项差异只作为可替换适配
 记录，后续不保证保留；每次 DeerFlow 相关升级都应重新审视是否能够删除差异。
+
+## 16. 当前实施切片
+
+本轮按以下顺序落地：
+
+1. North 为子 Agent 内部 model/tool 事件补充 `task_id`，并用测试固定关联关系。
+2. Lexora `RunJournal` 只投影有界的任务说明、检索词预览、调用状态和耗时。
+3. 前端以 `task_id/call_id` 建立每次调用的稳定 Activity；delegate 工具与 Subagent 合并，其他
+   同名工具调用保持独立。
+4. 用户层不展示子 Agent 的原始 AI step 文本；Subagent 行展示 Supervisor 给出的短任务说明，
+   子行展示实际工具及安全检索摘要。
+5. 主 Agent 只展示可证明的通用阶段：首次模型调用表示理解请求和选择能力，工具返回后的模型调用
+   表示核对结果并组织答复；不再为子 Agent 猜测“规划/综合”等阶段。
+6. 运行中和失败状态保持展开；最终回答完成后自动收起，用户可重新展开。
+
+Dayboard 使用同一 North 关联契约，但保留日程、任务操作的产品摘要；两个应用不共享中文映射或
+React 组件。

@@ -54,6 +54,46 @@ def test_runtime_projection_drops_raw_model_and_subagent_content() -> None:
     assert "must-not-persist" not in str(projected)
 
 
+def test_runtime_projection_keeps_bounded_subagent_activity_description() -> None:
+    projected = project_runtime_event(
+        RuntimeEvent(
+            event_type="subagent.start",
+            category="subagent",
+            content={
+                "description": "  梳理婚姻关系事实\n和回答目标  ",
+                "task_id": "task-1",
+            },
+            metadata={"task_id": "task-1", "subagent_type": "case_analyst"},
+        )
+    )
+
+    assert projected is not None
+    assert projected.extension.payload["description"] == "梳理婚姻关系事实 和回答目标"
+
+
+def test_runtime_projection_keeps_bounded_legal_search_description() -> None:
+    projected = project_runtime_event(
+        RuntimeEvent(
+            event_type="tool.started",
+            category="tool",
+            content={"query": "  分居多年\n是否自动离婚  "},
+            metadata={
+                "call_id": "tool-1",
+                "task_id": "research-task",
+                "tool_name": "search_legal_authorities",
+                "caller": "subagent:legal_researcher",
+            },
+        )
+    )
+
+    assert projected is not None
+    assert projected.extension.payload["task_id"] == "research-task"
+    assert projected.extension.payload["description"] == (
+        "检索“分居多年 是否自动离婚”相关的法规依据"
+    )
+    assert "query" not in projected.extension.payload
+
+
 @pytest.mark.asyncio
 async def test_run_journal_persists_activity_in_existing_run_events_table(
     session_factory,

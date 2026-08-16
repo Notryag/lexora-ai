@@ -2,6 +2,7 @@ from uuid import uuid4
 
 from lexora_ai.case_law_context import rank_case_law
 from lexora_ai.domain import CaseLawChunk
+from lexora_ai.evaluation.case_law_retrieval import _load_cases
 
 
 def _chunk(*, content: str, embedding: list[float] | None = None) -> CaseLawChunk:
@@ -59,3 +60,10 @@ def test_strong_vector_similarity_remains_retrievable() -> None:
         query_embedding=(1.0, 0.0),
         embedding_model="test-embedding",
     ) == [chunk]
+
+
+def test_default_case_law_evaluation_dataset_is_packaged() -> None:
+    cases = _load_cases(None)
+
+    assert len(cases) == 12
+    assert any(case.id == "bigamy-spousal-cohabitation" for case in cases)

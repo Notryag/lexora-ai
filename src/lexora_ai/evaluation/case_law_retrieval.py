@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 from dataclasses import asdict, dataclass
+from importlib.resources import files
 from pathlib import Path
 from uuid import uuid5
 
@@ -12,7 +13,7 @@ from lexora_ai.application.case_law_sources import CaseLawSourceService
 from lexora_ai.case_law_context import rank_case_law, split_case_law
 from lexora_ai.domain import CaseLawChunk, CaseLawStatus, LegalSourceReviewStatus
 
-DEFAULT_CASES_PATH = Path(__file__).resolve().parents[3] / "evaluation/case_law_retrieval.jsonl"
+DEFAULT_CASES_RESOURCE = "case_law_retrieval.jsonl"
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +32,7 @@ class CaseResult:
     relevant_rank: int | None
 
 
-async def evaluate(cases_path: Path = DEFAULT_CASES_PATH) -> dict[str, object]:
+async def evaluate(cases_path: Path | None = None) -> dict[str, object]:
     cases = _load_cases(cases_path)
     chunks = await _load_corpus()
     _validate_evidence(cases, chunks)
@@ -76,10 +77,17 @@ async def evaluate(cases_path: Path = DEFAULT_CASES_PATH) -> dict[str, object]:
     }
 
 
-def _load_cases(path: Path) -> list[EvaluationCase]:
+def _load_cases(path: Path | None) -> list[EvaluationCase]:
+    text = (
+        path.read_text(encoding="utf-8")
+        if path is not None
+        else files("lexora_ai.resources")
+        .joinpath(DEFAULT_CASES_RESOURCE)
+        .read_text(encoding="utf-8")
+    )
     return [
         EvaluationCase(**json.loads(line))
-        for line in path.read_text(encoding="utf-8").splitlines()
+        for line in text.splitlines()
         if line.strip()
     ]
 
@@ -138,7 +146,7 @@ def _recall_at(results: list[CaseResult], k: int) -> float:
 
 def run() -> None:
     parser = argparse.ArgumentParser(description="Evaluate Lexora case-law retrieval")
-    parser.add_argument("--cases", type=Path, default=DEFAULT_CASES_PATH)
+    parser.add_argument("--cases", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     report = asyncio.run(evaluate(args.cases))

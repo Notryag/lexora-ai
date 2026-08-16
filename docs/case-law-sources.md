@@ -51,8 +51,8 @@ uv run lexora-case-law embed
 
 ## 检索评测
 
-评测集位于 `evaluation/case_law_retrieval.jsonl`，每条问题指定预期指导案例和必须存在于官方
-正文的证据短语。运行：
+评测集作为包资源保存在 `src/lexora_ai/resources/case_law_retrieval.jsonl`，每条问题指定预期
+案例和必须存在于官方正文的证据短语。运行：
 
 ```bash
 uv run lexora-evaluate-case-law-retrieval \

@@ -2,7 +2,7 @@
 
 ## KI-001: Relationship-overlap answers repeat resolved or strongly implied questions
 
-Status: resolved and live-model verified on 2026-08-15.
+Status: reopened on 2026-08-16 after adding a directly relevant reviewed typical case.
 
 Reproduction input:
 
@@ -42,6 +42,14 @@ answer directly covered both questions, did not add a jurisdiction qualifier or 
 and did not turn the denied spouse-like cohabitation factor into a contrary case fact. The committed
 profile contained only the three user-stated facts and no missing-information entry. No case-law card
 was shown because no reviewed case was retrieved.
+
+The same live scenario was rerun after the reviewed Liu bigamy typical case was added. Retrieval and
+provenance worked: the answer cited the case's `裁判结果`, preserved the denied factor in the case
+profile, asked no follow-up question, and correctly said the stated facts were insufficient to infer
+bigamy. However, final synthesis then added a contrary “但若实际存在稳定共同生活……” branch. The
+system prompt and response contract already prohibit reopening denied factors, so another prompt
+sentence is not considered a reliable fix. The end-to-end fixture now rejects this contrary branch;
+the issue remains open pending a structured final-answer audit/regeneration design.
 
 Acceptance criteria for the later conversation-quality slice:
 

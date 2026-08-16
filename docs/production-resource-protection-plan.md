@@ -73,6 +73,8 @@ Lexora 应用已配置运行时限制；PostgreSQL 已迁移到共享 `platform-
 
 - 在当前服务器执行 `docker build`、`docker compose build` 或 `docker compose up --build`；
 - 执行 `docker compose down -v`、删除命名卷或重建数据库目录；
+- 在同一个受限应用容器中并行启动多个 Python 管理 CLI；即使数据库操作相互独立，重复加载
+  应用依赖也会共同计入容器内存上限。审核、同步、Embedding 和评测命令必须串行执行；
 - 为验证限制而在生产机运行压力测试、并发模型请求或内存填充程序；
 - 未审计镜像和 Build Cache 引用关系前执行 `docker system prune`；
 - 直接在 `system.slice` 或根 slice 启用 `ManagedOOMMemoryPressure=kill`；

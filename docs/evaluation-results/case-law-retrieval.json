@@ -1,8 +1,8 @@
 {
   "retriever": "lexical_ngram",
-  "corpus_sources": 7,
-  "corpus_chunks": 52,
-  "cases": 7,
+  "corpus_sources": 16,
+  "corpus_chunks": 112,
+  "cases": 12,
   "recall_at_1": 1.0,
   "recall_at_3": 1.0,
   "recall_at_5": 1.0,
@@ -12,62 +12,73 @@
     {
       "id": "intermediary-bypass",
       "expected": "指导案例1号",
-      "retrieved": [
-        "指导案例1号",
-        "指导性案例240号",
-        "指导案例64号"
-      ],
+      "retrieved": ["指导案例1号", "入库编号 2025-07-2-186-001", "入库编号 2024-18-1-221-001", "指导案例64号"],
       "relevant_rank": 1
     },
     {
       "id": "execution-settlement",
       "expected": "指导案例2号",
-      "retrieved": [
-        "指导案例2号"
-      ],
+      "retrieved": ["指导案例2号", "指导案例64号", "指导案例179号", "指导案例66号"],
       "relevant_rank": 1
     },
     {
       "id": "car-sales-fraud",
       "expected": "指导案例17号",
-      "retrieved": [
-        "指导案例17号",
-        "指导案例1号"
-      ],
+      "retrieved": ["指导案例17号", "入库编号 2025-07-2-186-001", "入库编号 2024-18-1-221-001"],
       "relevant_rank": 1
     },
     {
       "id": "unsafe-food-compensation",
       "expected": "指导案例23号",
-      "retrieved": [
-        "指导案例23号"
-      ],
+      "retrieved": ["指导案例23号", "指导案例17号", "指导案例18号"],
       "relevant_rank": 1
     },
     {
       "id": "telecom-expiry-notice",
       "expected": "指导案例64号",
-      "retrieved": [
-        "指导案例64号",
-        "指导案例17号",
-        "指导案例1号"
-      ],
+      "retrieved": ["指导案例64号", "指导案例17号", "指导案例1号"],
       "relevant_rank": 1
     },
     {
       "id": "cooperation-employment",
       "expected": "指导案例179号",
-      "retrieved": [
-        "指导案例179号"
-      ],
+      "retrieved": ["指导案例179号", "指导性案例240号"],
       "relevant_rank": 1
     },
     {
       "id": "platform-driver-employment",
       "expected": "指导性案例240号",
-      "retrieved": [
-        "指导性案例240号"
-      ],
+      "retrieved": ["指导性案例240号", "指导案例179号", "入库编号 2025-07-2-186-001"],
+      "relevant_rank": 1
+    },
+    {
+      "id": "bigamy-spousal-cohabitation",
+      "expected": "最高法典型案例 2024-11-25 案例四",
+      "retrieved": ["最高法典型案例 2024-11-25 案例四", "指导案例66号", "最高法典型案例 2025-01-15 案例二", "最高法典型案例 2025-01-15 案例一"],
+      "relevant_rank": 1
+    },
+    {
+      "id": "premarital-home-added-name",
+      "expected": "最高法典型案例 2025-01-15 案例一",
+      "retrieved": ["最高法典型案例 2025-01-15 案例一", "最高法典型案例 2025-01-15 案例二", "指导案例66号"],
+      "relevant_rank": 1
+    },
+    {
+      "id": "parents-funded-home",
+      "expected": "最高法典型案例 2025-01-15 案例二",
+      "retrieved": ["最高法典型案例 2025-01-15 案例二", "指导案例66号", "最高法典型案例 2025-01-15 案例一", "最高法典型案例 2025-01-15 案例四"],
+      "relevant_rank": 1
+    },
+    {
+      "id": "hidden-marital-assets",
+      "expected": "指导案例66号",
+      "retrieved": ["指导案例66号", "最高法典型案例 2025-01-15 案例一", "最高法典型案例 2025-01-15 案例二"],
+      "relevant_rank": 1
+    },
+    {
+      "id": "affair-gift-return",
+      "expected": "最高法典型案例 2025-01-15 案例四",
+      "retrieved": ["最高法典型案例 2025-01-15 案例四", "指导案例66号", "最高法典型案例 2025-01-15 案例二"],
       "relevant_rank": 1
     }
   ]

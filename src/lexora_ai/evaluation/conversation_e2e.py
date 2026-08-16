@@ -383,7 +383,7 @@ async def _stream_turn(
         "POST",
         f"/api/v1/cases/{case_id}/messages/stream",
         json={"message": message},
-        headers={"Accept": "application/x-ndjson"},
+        headers={"Accept": "text/event-stream, application/x-ndjson"},
     ) as response:
         if response.status_code >= 400:
             body = (await response.aread()).decode(errors="replace")
@@ -391,18 +391,15 @@ async def _stream_turn(
                 f"stream request returned HTTP {response.status_code}: {body[:500]}"
             )
         content_type = response.headers.get("content-type", "")
-        if "application/x-ndjson" not in content_type:
+        is_sse = "text/event-stream" in content_type
+        is_ndjson = "application/x-ndjson" in content_type
+        if not is_sse and not is_ndjson:
             raise ConversationEvaluationError(
                 f"stream response has unexpected content type: {content_type or 'missing'}"
             )
-        async for line in response.aiter_lines():
-            if not line.strip():
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ConversationEvaluationError("stream returned invalid NDJSON") from exc
-            event_type = event.get("type")
+
+        def observe(event_type: object, event: dict[str, object]) -> None:
+            nonlocal first_delta_at, result
             if event_type == "delta":
                 delta = event.get("delta")
                 if not isinstance(delta, str) or not delta:
@@ -415,12 +412,61 @@ async def _stream_turn(
                     raise ConversationEvaluationError("stream returned multiple complete events")
                 result = CaseConversationTurnResult.model_validate(event.get("result"))
             elif event_type == "error":
-                message = str(event.get("message") or "stream failed")
+                error_message = str(event.get("message") or "stream failed")
                 if event.get("code") == "provider_unavailable":
-                    raise ConversationEvaluationInfrastructureError(message)
-                raise ConversationEvaluationError(message)
-            else:
-                raise ConversationEvaluationError(f"stream returned unknown event type: {event_type}")
+                    raise ConversationEvaluationInfrastructureError(error_message)
+                raise ConversationEvaluationError(error_message)
+            elif event_type == "gap":
+                raise ConversationEvaluationError("stream replay gap prevented complete observation")
+            elif event_type not in {"metadata", "custom", "end"}:
+                raise ConversationEvaluationError(
+                    f"stream returned unknown event type: {event_type}"
+                )
+
+        if is_ndjson:
+            async for line in response.aiter_lines():
+                if not line.strip():
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ConversationEvaluationError("stream returned invalid NDJSON") from exc
+                observe(event.get("type"), event)
+        else:
+            event_name = "message"
+            data_lines: list[str] = []
+
+            def dispatch_sse() -> None:
+                nonlocal event_name, data_lines
+                if not data_lines:
+                    event_name = "message"
+                    return
+                try:
+                    payload = json.loads("\n".join(data_lines))
+                except json.JSONDecodeError as exc:
+                    raise ConversationEvaluationError("stream returned invalid SSE data") from exc
+                if not isinstance(payload, dict):
+                    raise ConversationEvaluationError("stream returned non-object SSE data")
+                mapped_type = "delta" if event_name == "messages" else event_name
+                observe(mapped_type, payload)
+                event_name = "message"
+                data_lines = []
+
+            async for raw_line in response.aiter_lines():
+                line = raw_line.removesuffix("\r")
+                if not line:
+                    dispatch_sse()
+                    continue
+                if line.startswith(":"):
+                    continue
+                field, separator, value = line.partition(":")
+                if separator and value.startswith(" "):
+                    value = value[1:]
+                if field == "event":
+                    event_name = value or "message"
+                elif field == "data":
+                    data_lines.append(value)
+            dispatch_sse()
     completed = clock()
     if result is None:
         raise ConversationEvaluationError("stream ended without a complete event")

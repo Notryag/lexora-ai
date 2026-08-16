@@ -6,7 +6,7 @@ This evaluation exercises the user-visible conversation path end to end:
 
 ```text
 HTTP request
-  -> NDJSON text deltas
+  -> SSE text deltas and runtime events
   -> completed Agent Run
   -> assistant answer and citation presentation
   -> CaseFactorProfile projection

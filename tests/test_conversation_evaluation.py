@@ -164,15 +164,19 @@ async def test_execute_suite_checks_stream_persistence_and_exact_cleanup() -> No
         if request.url.path.endswith("/messages/stream"):
             result = _turn_result_payload("你好，请描述你的法律问题。")
             events = [
-                {"type": "delta", "delta": "你好，"},
-                {"type": "delta", "delta": "请描述你的法律问题。"},
-                {"type": "complete", "result": result},
+                ("metadata", {"run_id": str(RUN_ID)}),
+                ("messages", {"delta": "你好，"}),
+                ("custom", {"type": "agent.started", "content": "正在分析"}),
+                ("messages", {"delta": "请描述你的法律问题。"}),
+                ("complete", {"result": result}),
+                ("end", {}),
             ]
             return httpx.Response(
                 200,
-                headers={"Content-Type": "application/x-ndjson"},
+                headers={"Content-Type": "text/event-stream"},
                 content="".join(
-                    f"{json.dumps(event, ensure_ascii=False)}\n" for event in events
+                    f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+                    for event, data in events
                 ).encode(),
             )
         if request.url.path.endswith("/messages") and request.method == "GET":

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Protocol
@@ -27,9 +28,18 @@ class CaseLawSyncResult:
 
 
 class CaseLawSyncService:
-    def __init__(self, sources: CaseLawSourceService, connector: CaseLawConnector) -> None:
+    def __init__(
+        self,
+        sources: CaseLawSourceService,
+        connector: CaseLawConnector,
+        *,
+        request_interval_seconds: float = 0,
+    ) -> None:
+        if request_interval_seconds < 0:
+            raise ValueError("request_interval_seconds cannot be negative")
         self._sources = sources
         self._connector = connector
+        self._request_interval_seconds = request_interval_seconds
 
     async def sync(self, source_urls: list[str]) -> list[CaseLawSyncResult]:
         results: list[CaseLawSyncResult] = []
@@ -37,8 +47,18 @@ class CaseLawSyncService:
             (source.source_url, source.content_sha256): source
             for source in await self._sources.list()
         }
+        last_request_started_at: float | None = None
+        loop = asyncio.get_running_loop()
         for source_url in source_urls:
             try:
+                if last_request_started_at is not None:
+                    remaining = (
+                        self._request_interval_seconds
+                        - (loop.time() - last_request_started_at)
+                    )
+                    if remaining > 0:
+                        await asyncio.sleep(remaining)
+                last_request_started_at = loop.time()
                 document = await self._connector.fetch(source_url)
                 content_hash = sha256(document.content.encode()).hexdigest()
                 unchanged = existing_versions.get((document.source_url, content_hash))

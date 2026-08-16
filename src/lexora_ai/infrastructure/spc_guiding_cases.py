@@ -10,8 +10,17 @@ from urllib.request import Request, urlopen
 from lexora_ai.domain import CaseLawSourceCreate, CaseLawStatus, LegalSourceReviewStatus
 
 _CASE_NUMBER_RE = re.compile(r"指导性?案例\d+号")
+_REFERENCE_CASE_NUMBER_RE = re.compile(r"入库编号\s*[-：:]?\s*(\d{4}(?:-\d+){4})")
 _PUBLISHED_RE = re.compile(r"发布时间[：:]\s*(\d{4}-\d{2}-\d{2})")
-_SECTION_LABELS = ("裁判要点", "相关法条", "基本案情", "裁判结果", "裁判理由")
+_SECTION_LABELS = (
+    "裁判要点",
+    "裁判要旨",
+    "相关法条",
+    "基本案情",
+    "裁判结果",
+    "裁判理由",
+    "关联索引",
+)
 
 
 class SpcGuidingCaseError(ValueError):
@@ -103,18 +112,25 @@ class SpcGuidingCaseConnector:
         if not page_title or not parser.paragraphs:
             raise SpcGuidingCaseError("official guiding-case page has no readable case content")
 
-        case_number_match = _CASE_NUMBER_RE.search(page_title)
-        if case_number_match is None:
-            case_number_match = next(
-                (_CASE_NUMBER_RE.search(item) for item in parser.paragraphs if _CASE_NUMBER_RE.search(item)),
-                None,
-            )
-        if case_number_match is None:
-            raise SpcGuidingCaseError("official guiding-case number was not found")
-        case_number = case_number_match.group(0)
-        title = re.sub(rf"^{re.escape(case_number)}\s*[：:]?\s*", "", page_title).strip()
+        page_and_content = "\n".join((page_title, *parser.paragraphs))
+        guiding_case_match = _CASE_NUMBER_RE.search(page_and_content)
+        reference_case_match = _REFERENCE_CASE_NUMBER_RE.search(page_and_content)
+        if guiding_case_match is not None:
+            case_number = guiding_case_match.group(0)
+            title = re.sub(
+                rf"^{re.escape(case_number)}\s*[：:]?\s*", "", page_title
+            ).strip()
+            source_name = "最高人民法院指导性案例"
+        elif reference_case_match is not None:
+            case_number = f"入库编号 {reference_case_match.group(1)}"
+            title = re.sub(
+                r"^入库参考案例(?:选介)?\s*[：:]?\s*", "", page_title
+            ).strip()
+            source_name = "人民法院案例库入库参考案例"
+        else:
+            raise SpcGuidingCaseError("official case number was not found")
         if not title:
-            raise SpcGuidingCaseError("official guiding-case title was not found")
+            raise SpcGuidingCaseError("official case title was not found")
 
         meta = re.sub(r"\s+", " ", "".join(parser.meta_parts))
         published_match = _PUBLISHED_RE.search(meta)
@@ -127,7 +143,7 @@ class SpcGuidingCaseConnector:
             issuing_authority="最高人民法院",
             status=CaseLawStatus.active,
             published_on=published_on,
-            source_name="最高人民法院指导性案例",
+            source_name=source_name,
             source_url=source_url,
             content=content,
             review_status=LegalSourceReviewStatus.pending,
@@ -140,8 +156,8 @@ class SpcGuidingCaseConnector:
         pending_keywords = False
         for paragraph in paragraphs:
             text = paragraph.strip()
-            if "关键词" in text:
-                payload = text.split("关键词", maxsplit=1)[1].strip(" ：:")
+            if text.startswith("关键词"):
+                payload = text.removeprefix("关键词").strip(" ：:")
                 if payload:
                     keywords = [item for item in re.split(r"[\s　/／]+", payload) if item]
                 lines.append("关键词")
@@ -163,8 +179,11 @@ class SpcGuidingCaseConnector:
                 continue
             lines.append(text)
         content = "\n".join(lines).strip()
-        if "裁判要点" not in lines or "基本案情" not in lines:
-            raise SpcGuidingCaseError("official guiding-case sections are incomplete")
+        if (
+            not ({"裁判要点", "裁判要旨"} & set(lines))
+            or "基本案情" not in lines
+        ):
+            raise SpcGuidingCaseError("official case sections are incomplete")
         return content, keywords
 
     @classmethod

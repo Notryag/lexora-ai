@@ -29,10 +29,12 @@ CASE_LAW_SECTIONS = (
     "案例信息",
     "关键词",
     "裁判要点",
+    "裁判要旨",
     "相关法条",
     "基本案情",
     "裁判结果",
     "裁判理由",
+    "关联索引",
 )
 CASE_LAW_TOP_K = 5
 CASE_LAW_STOP_TERMS = {

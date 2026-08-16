@@ -42,3 +42,35 @@ def test_parser_extracts_structured_official_guiding_case() -> None:
 def test_connector_rejects_non_official_hosts_before_download() -> None:
     with pytest.raises(SpcGuidingCaseError, match="court.gov.cn"):
         SpcGuidingCaseConnector().parse("https://example.com/case", "<html></html>")
+
+
+def test_parser_extracts_structured_official_reference_case() -> None:
+    html = """
+    <div class="detail">
+      <div class="title">入库参考案例：徐某盗窃案</div>
+      <div class="clearfix detail_mes">
+        <li>来源：人民法院报</li><li>发布时间：2025-01-09 08:54:07</li>
+      </div>
+      <div class="txt big"><div class="txt_txt">
+        <p>徐某盗窃案</p>
+        <p>入库编号2024-18-1-221-001</p>
+        <p>关键词 刑事 盗窃罪 量刑均衡</p>
+        <p>基本案情</p><p>徐某多次盗窃他人财物。</p>
+        <p>裁判理由</p><p>应当坚持罪责刑相适应。</p>
+        <p>裁判要旨</p><p>量刑应当综合全案情节。</p>
+        <p>关联索引</p><p>《中华人民共和国刑法》第264条</p>
+      </div></div>
+    </div>
+    """
+
+    source = SpcGuidingCaseConnector().parse(
+        "https://www.court.gov.cn/zixun/xiangqing/452231.html",
+        html,
+    )
+
+    assert source.case_number == "入库编号 2024-18-1-221-001"
+    assert source.title == "徐某盗窃案"
+    assert source.keywords == ["刑事", "盗窃罪", "量刑均衡"]
+    assert source.source_name == "人民法院案例库入库参考案例"
+    assert source.published_on == date(2025, 1, 9)
+    assert "裁判要旨\n量刑应当综合全案情节。" in source.content

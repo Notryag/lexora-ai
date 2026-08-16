@@ -21,6 +21,12 @@ def _parser() -> argparse.ArgumentParser:
     sync = commands.add_parser("sync", help="download official cases for review")
     sync.add_argument("--manifest", type=Path)
     sync.add_argument("--url", action="append", dest="urls")
+    sync.add_argument(
+        "--request-interval",
+        type=float,
+        default=20.0,
+        help="seconds between official-source requests (minimum: 10)",
+    )
     review = commands.add_parser("review", help="approve or reject a downloaded case")
     review.add_argument("source_id", type=UUID)
     review.add_argument("decision", choices=("approve", "reject"))
@@ -43,8 +49,14 @@ def _load_urls(path: Path | None) -> list[str]:
 
 
 async def _run(args: argparse.Namespace) -> int:
+    if args.command == "sync" and args.request_interval < 10:
+        raise ValueError("request interval must be at least 10 seconds")
     sources = CaseLawSourceService(get_session_factory(), get_embedding_gateway())
-    service = CaseLawSyncService(sources, SpcGuidingCaseConnector())
+    service = CaseLawSyncService(
+        sources,
+        SpcGuidingCaseConnector(),
+        request_interval_seconds=(args.request_interval if args.command == "sync" else 0),
+    )
     if args.command == "sync":
         results = await service.sync(args.urls or _load_urls(args.manifest))
         for result in results:

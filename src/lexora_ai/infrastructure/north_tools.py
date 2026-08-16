@@ -173,8 +173,8 @@ def build_lexora_tools(
                 coroutine=search_guiding_cases,
                 name="search_guiding_cases",
                 description=(
-                    "Search reviewed official guiding cases for one focused comparison. At most "
-                    "two searches are accepted in one turn."
+                    "Search reviewed official guiding or reference cases for one focused "
+                    "comparison. At most two searches are accepted in one turn."
                 ),
                 args_schema=LegalContextSearchInput,
             ),

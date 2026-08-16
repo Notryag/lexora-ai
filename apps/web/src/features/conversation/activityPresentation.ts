@@ -26,7 +26,7 @@ const SUBAGENT_NAMES: Record<string, string> = {
 const TOOL_NAMES: Record<string, string> = {
   calculate_employment_termination_compensation: "计算劳动补偿金额",
   search_case_materials: "检索案件材料",
-  search_guiding_cases: "检索指导性案例",
+  search_guiding_cases: "检索相关案例",
   search_legal_authorities: "检索法规依据",
 };
 

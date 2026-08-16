@@ -16,10 +16,10 @@
 - 2 GiB Swap，`vm.swappiness=10`；
 - 根磁盘 59 GiB，已使用约 88%；
 - cgroup v2 与 Docker systemd cgroup driver 已启用；
-- 同时运行 Lexora、Dayboard、Sub2API、Debug Relay 及共享 PostgreSQL/Redis，共 12 个容器；
+- 同时运行 Lexora、Dayboard、Sub2API、Debug Relay 及共享 PostgreSQL/Redis，共 11 个容器；
 - SSH 的 `OOMScoreAdjust=-1000`，`dockerd=-500`，`containerd=-999`；
 - `systemd-oomd` 未安装；
-- Docker Build Cache 约 2.58 GiB 可回收，但清理不是本任务的默认授权。
+- Docker Build Cache 已精确清理为 0；未清理镜像、容器或数据卷。
 
 Lexora 应用已配置运行时限制；PostgreSQL 已迁移到共享 `platform-postgres`，由平台 Compose
 统一设置限制：
@@ -29,12 +29,9 @@ Lexora 应用已配置运行时限制；PostgreSQL 已迁移到共享 `platform-
 | API | 512 MiB | 512 MiB | 256 |
 | Web | 192 MiB | 192 MiB | 128 |
 
-以下运行容器当前没有 Docker 内存、Swap 或 PID 上限：
-
-- `dayboard-api-1`、`dayboard-worker-1`、`dayboard-web-1`；
-- `platform-postgres`、`platform-redis`；
-- `sub2api`、`sub2api-postgres`、`sub2api-redis`；
-- `debug-relay-api-1`。
+全部 11 个运行容器现已设置 Docker 内存、Memory + Swap 和 PID 上限。具体限额与实测工作集
+见 [Production Resource Measurements](./production-resource-measurements.md)。原
+`lexora-ai-postgres-1` 已停止但未删除，数据卷继续保留用于回滚。
 
 相关 Compose 文件：
 
@@ -203,8 +200,9 @@ docker inspect CONTAINER_NAMES \
 当前 2 GiB Swap 保持不变。更多 Swap 不能提供隔离，只可能延长换页抖动时间。根磁盘仅剩约
 7.3 GiB，增加 Swap 还会压缩 Docker 拉取新镜像和回滚所需空间。
 
-Build Cache 当前约有 2.58 GiB 可回收。清理前必须列出缓存、正在使用的镜像和回滚镜像，获得
-用户确认后才能执行精确清理。不要使用无范围的 `docker system prune -a`。
+Build Cache 已在用户确认后使用精确的 builder cache 清理命令回收，未使用
+`docker system prune -a`，也未删除镜像、容器或数据卷。平台定时任务每天清理 Build Cache，
+仅清理闲置超过七天的镜像，避免磁盘缓存再次无边界增长。
 
 ## 10. 最终交付物
 
@@ -220,3 +218,5 @@ Build Cache 当前约有 2.58 GiB 可回收。清理前必须列出缓存、正�
 
 任何阶段遇到未知 Compose 改动、未提交用户修改或无法证明数据安全时，应停止对应变更并报告，
 不要重置或覆盖现有工作区。
+
+本次结论见 [systemd-oomd Assessment](./systemd-oomd-assessment.md)：当前保持未安装、未启用。

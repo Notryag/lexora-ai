@@ -1,7 +1,7 @@
 # Production Resource Measurements
 
-Measured on 2026-08-16 before adding limits to services outside Lexora. No stress workload,
-container restart, image build, or volume operation was performed.
+Measured on 2026-08-16 before and after applying production limits. No stress workload, local
+image build, destructive database operation, or volume deletion was performed.
 
 ## Host Baseline
 
@@ -42,31 +42,42 @@ the sample. Debug Relay, Dayboard, Sub2API, both PostgreSQL instances, and both 
 responded to their normal health commands. The Sub2API Redis check also emitted an authentication
 warning before `PONG`; its container health status remained healthy and no configuration was changed.
 
+## Applied Limits
+
+Limits were applied one project at a time, with health verification between projects. The totals
+reserve about 743 MiB of physical memory outside container hard limits.
+
+| Container | Memory | Memory + Swap | PIDs | Post-change working set |
+|---|---:|---:|---:|---:|
+| `lexora-ai-api-1` | 512 MiB | 512 MiB | 256 | 183 MiB |
+| `lexora-ai-web-1` | 192 MiB | 192 MiB | 128 | 37 MiB |
+| `debug-relay-api-1` | 192 MiB | 192 MiB | 64 | 85 MiB |
+| `dayboard-api-1` | 256 MiB | 256 MiB | 128 | 122 MiB |
+| `dayboard-worker-1` | 256 MiB | 256 MiB | 128 | 109 MiB |
+| `dayboard-web-1` | 128 MiB | 128 MiB | 128 | 32 MiB |
+| `platform-postgres` | 384 MiB | 384 MiB | 128 | 163 MiB |
+| `platform-redis` | 64 MiB | 64 MiB | 64 | 7 MiB |
+| `sub2api` | 320 MiB | 320 MiB | 256 | 98 MiB |
+| `sub2api-postgres` | 224 MiB | 224 MiB | 128 | 91 MiB |
+| `sub2api-redis` | 64 MiB | 64 MiB | 128 | 12 MiB |
+
+The final inspection found no running container with `memory=0`, `swap=0`, or an empty PID limit.
+All containers with configured health checks were healthy; Dayboard Web has no container health
+check and responded through its normal HTTP route. Host `MemAvailable` was about 1.5 GiB and Swap
+use was about 2 MiB after the changes.
+
 ## Capacity Decision
 
-The nine currently unlimited containers used about 786 MiB at the sampled maxima. The reviewed
-Lexora application defaults total 704 MiB, reduced from 1,536 MiB; its database moves into the shared
-PostgreSQL budget. About 1,863 MiB of the 3.26 GiB host remains
-for the other containers after reserving the plan's minimum 768 MiB for the operating system, SSH,
-Docker, Nginx, and file cache.
+The running-container hard limits total 2,592 MiB on a 3.26 GiB host. Current working sets are well
+below their limits and preserve the required host reserve under the observed workload. This is a
+short production sample, so memory usage and OOM counters still need routine observation during
+real traffic peaks. Upgrade to at least 8 GiB if representative peaks cannot remain within these
+limits while retaining roughly 700-800 MiB for the host.
 
-That leaves about 693 MiB above the nine services' short passive sample. This is materially better,
-but the sample does not establish normal request peaks for two independent agent runtimes, the
-Dayboard worker, PostgreSQL cache growth, or Sub2API traffic. Final limits for those services still
-need a representative passive measurement window.
+Lexora PostgreSQL now runs in `platform-postgres`; the stopped former Lexora PostgreSQL container
+and its volume remain available for rollback. Docker build cache was reduced from about 2.58 GiB to
+zero without pruning images, containers, or volumes. The platform cleanup timer now removes build
+cache daily and only prunes unused images older than seven days.
 
-Phase 2 applies only the reviewed Lexora defaults and stops before changing another project or
-recreating any container. Repeat passive sampling over a representative traffic window, then set
-limits one Compose project at a time. Upgrade to at least 8 GiB if those measured limits cannot fit
-while preserving the required host reserve. Until then:
-
-- keep the reviewed Lexora application defaults at API 512 MiB and Web 192 MiB;
-- do not run builds or stress tests on the production host;
-- do not add Swap as a substitute for isolation;
-- preserve the current PostgreSQL/Redis volumes and Sub2API bind-mounted data;
-- defer `systemd-oomd`, because Phase 2 has not passed and host-wide kill policy is not a capacity
-  substitute.
-
-Dayboard and Debug Relay also had unrelated, uncommitted health-check interval changes during this
-audit. Their Compose files were intentionally left untouched rather than mixing ownership or
-restarting services from a dirty production checkout.
+Continue to avoid production-host builds and stress tests. Do not increase Swap as a substitute for
+resource isolation. The separate systemd-oomd assessment concludes that it should remain disabled.

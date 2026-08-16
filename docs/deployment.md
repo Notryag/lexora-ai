@@ -1,6 +1,6 @@
 # Docker 部署
 
-Lexora 在当前服务器上使用 Docker Compose 管理 PostgreSQL、API 和 Web：
+Lexora 在当前服务器上使用 Docker Compose 管理 API 和 Web，并使用共享 PostgreSQL：
 
 ```text
 Nginx (https://lexora.selfapi.art)
@@ -8,10 +8,14 @@ Nginx (https://lexora.selfapi.art)
   -> 127.0.0.1:8011 -> API
 
 Lexora Docker Compose
-  -> Web、API、PostgreSQL
+  -> Web、API
+
+platform-infra Compose
+  -> platform-postgres 中的独立 lexora database/user
 ```
 
-宿主机端口只绑定 `127.0.0.1`，Nginx 提供公网 HTTPS 入口。PostgreSQL 不对公网开放。
+宿主机端口只绑定 `127.0.0.1`，Nginx 提供公网 HTTPS 入口。共享 PostgreSQL 不对公网开放，
+API 通过外部 `platform-infra` Docker 网络访问 `platform-postgres`。
 
 ## 镜像构建
 
@@ -56,9 +60,10 @@ cd /home/zx/lexora-ai
 ```
 
 上面的命令默认是 dry-run，只校验 Compose 和镜像参数，不修改容器。确认后增加 `--execute`
-执行部署。脚本使用 `flock` 避免并行部署，只拉取并更新 API/Web；随后检查 PostgreSQL、API、
-Web 的健康状态以及 <https://lexora.selfapi.art/api/v1/health>。失败时会打印上一组本地镜像的
-回滚命令，不删除数据卷。
+执行部署。脚本使用 `flock` 避免并行部署，只拉取并更新 API/Web；随后检查共享
+`platform-postgres`、API、Web 的健康状态以及
+<https://lexora.selfapi.art/api/v1/health>。失败时会打印上一组本地镜像的回滚命令，不删除
+数据卷。
 
 `docker-compose.prod.yml` 要求显式设置两个镜像变量；缺失时 Compose 会直接报错，不会回退
 到本地镜像。API 容器启动时自动执行 `alembic upgrade head`。不要再额外启动宿主机 FastAPI
@@ -69,15 +74,33 @@ Web 的健康状态以及 <https://lexora.selfapi.art/api/v1/health>。失败时
 Lexora Alembic 只管理 Thread、Run、事件和法律业务表。应用 Run 与 checkpoint 共用数据库，
 但职责和迁移所有权相互独立。
 
+### 共享数据库迁移与回滚
+
+2026-08-16 将 Lexora 的独立 PostgreSQL 迁移到 `platform-postgres` 中的独立 `lexora`
+database/user。迁移归档保存在 `storage/backups/` 并带 SHA-256 校验文件。迁移验证必须比较
+全部 public 表的精确行数、Alembic 版本、North checkpoint 数量、表所有者和 `vector` 扩展。
+
+原 `lexora-ai-postgres-1` 容器和 `lexora-ai_lexora-postgres-data` 卷在观察期内保留。需要回滚
+数据库连接时，先停止 API/Web，启动旧数据库容器，再使用旧主机名重建 API/Web：
+
+```bash
+docker start lexora-ai-postgres-1
+export LEXORA_DATABASE_HOST=postgres
+docker compose up -d --no-build api web
+```
+
+回滚后的新写入会进入旧库，不能在两个数据库之间来回切换。确认共享库稳定并完成新的平台级
+备份前，不删除旧容器或命名卷。
+
 ## 资源隔离
 
-Compose 默认给三个服务设置硬内存、交换区和 PID 上限：
+Lexora Compose 默认给两个应用服务设置硬内存、交换区和 PID 上限。共享 PostgreSQL 的限额由
+`/home/zx/platform-infra/docker-compose.yml` 管理：
 
 | 服务 | 内存上限 | `memory + swap` 上限 | PID 上限 |
 |---|---:|---:|---:|
-| API | 768 MiB | 768 MiB | 256 |
-| PostgreSQL | 512 MiB | 512 MiB | 128 |
-| Web | 256 MiB | 256 MiB | 128 |
+| API | 512 MiB | 512 MiB | 256 |
+| Web | 192 MiB | 192 MiB | 128 |
 
 `memory + swap` 与内存上限相等，表示容器不能继续占用宿主机交换区。这样应用发生内存回归
 时，故障会被限制在对应容器，不会再次把整台主机拖入换页风暴。限制是最后一道隔离措施，
@@ -86,19 +109,17 @@ Compose 默认给三个服务设置硬内存、交换区和 PID 上限：
 如确需调整，应先按宿主机容量核算三个容器总额和操作系统余量，再通过部署环境变量覆盖：
 
 ```bash
-export LEXORA_API_MEMORY_LIMIT=768m
-export LEXORA_API_MEMORY_SWAP_LIMIT=768m
-export LEXORA_POSTGRES_MEMORY_LIMIT=512m
-export LEXORA_POSTGRES_MEMORY_SWAP_LIMIT=512m
-export LEXORA_WEB_MEMORY_LIMIT=256m
-export LEXORA_WEB_MEMORY_SWAP_LIMIT=256m
+export LEXORA_API_MEMORY_LIMIT=512m
+export LEXORA_API_MEMORY_SWAP_LIMIT=512m
+export LEXORA_WEB_MEMORY_LIMIT=192m
+export LEXORA_WEB_MEMORY_SWAP_LIMIT=192m
 docker compose up -d --force-recreate
 ```
 
 部署后验证实际生效值；结果单位为字节，且每个服务的 `MemorySwap` 应等于 `Memory`：
 
 ```bash
-docker inspect lexora-ai-api-1 lexora-ai-postgres-1 lexora-ai-web-1 \
+docker inspect lexora-ai-api-1 lexora-ai-web-1 platform-postgres \
   --format '{{.Name}} memory={{.HostConfig.Memory}} swap={{.HostConfig.MemorySwap}} pids={{.HostConfig.PidsLimit}}'
 docker stats --no-stream
 ```
@@ -111,7 +132,7 @@ curl -fsS http://127.0.0.1:3000/api/v1/health
 docker compose ps
 ```
 
-API、Web 和 PostgreSQL 都应显示 `healthy`。公网健康地址是
+API、Web 和共享 PostgreSQL 都应显示 `healthy`。公网健康地址是
 <https://lexora.selfapi.art/api/v1/health>。
 
 ## 回滚
@@ -138,9 +159,9 @@ docker compose logs -f api
 
 ## 数据安全
 
-PostgreSQL 数据保存在 `lexora-ai_lexora-postgres-data` 命名卷。部署前的校验备份保存在
-`storage/backups/`，该目录不进入 Git。禁止执行 `docker compose down -v` 或删除该命名卷。
-普通停止和恢复使用：
+Lexora 数据保存在共享 `platform-postgres` 的独立 `lexora` database 中，底层卷由
+`platform-infra` 管理。迁移前的校验备份和原 `lexora-ai_lexora-postgres-data` 卷继续保留；
+禁止删除任一卷。备份保存在 `storage/backups/`，该目录不进入 Git。普通应用停止和恢复使用：
 
 ```bash
 docker compose stop

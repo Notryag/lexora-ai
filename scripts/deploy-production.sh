@@ -99,11 +99,23 @@ wait_healthy() {
   return 1
 }
 
-wait_healthy postgres
+wait_container_healthy() {
+  local container="$1"
+  local status
+  for _ in {1..60}; do
+    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container")"
+    [[ "$status" == healthy ]] && return 0
+    sleep 2
+  done
+  printf '%s did not become healthy\n' "$container" >&2
+  return 1
+}
+
+wait_container_healthy platform-postgres
 wait_healthy api
 wait_healthy web
 curl -fsSL --connect-timeout 5 --max-time 15 "$HEALTH_URL" >/dev/null
 
 trap - ERR
-"${compose[@]}" ps postgres api web
+"${compose[@]}" ps api web
 printf 'Deployment completed and %s is healthy.\n' "$HEALTH_URL"

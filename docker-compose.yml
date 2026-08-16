@@ -1,40 +1,14 @@
 services:
-  postgres:
-    image: pgvector/pgvector:pg17
-    restart: unless-stopped
-    mem_limit: ${LEXORA_POSTGRES_MEMORY_LIMIT:-512m}
-    memswap_limit: ${LEXORA_POSTGRES_MEMORY_SWAP_LIMIT:-512m}
-    pids_limit: ${LEXORA_POSTGRES_PIDS_LIMIT:-128}
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-lexora}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lexora}
-      POSTGRES_USER: ${POSTGRES_USER:-lexora}
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-lexora} -d ${POSTGRES_DB:-lexora}",
-        ]
-      interval: 1h
-      start_interval: 5s
-      start_period: 30s
-      timeout: 3s
-      retries: 10
-    ports:
-      - "127.0.0.1:5434:5432"
-    volumes:
-      - lexora-postgres-data:/var/lib/postgresql/data
-
   api:
     image: ${LEXORA_API_IMAGE:-lexora-api:local}
     restart: unless-stopped
-    mem_limit: ${LEXORA_API_MEMORY_LIMIT:-768m}
-    memswap_limit: ${LEXORA_API_MEMORY_SWAP_LIMIT:-768m}
+    mem_limit: ${LEXORA_API_MEMORY_LIMIT:-512m}
+    memswap_limit: ${LEXORA_API_MEMORY_SWAP_LIMIT:-512m}
     pids_limit: ${LEXORA_API_PIDS_LIMIT:-256}
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-lexora}:${POSTGRES_PASSWORD:-lexora}@postgres:5432/${POSTGRES_DB:-lexora}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-lexora}:${POSTGRES_PASSWORD:-lexora}@${LEXORA_DATABASE_HOST:-platform-postgres}:5432/${POSTGRES_DB:-lexora}
       LEGAL_SOURCE_REPOSITORY_PATH: /data/lvyan-lawtext
       LEXORA_HOST: 0.0.0.0
       LEXORA_PORT: 8011
@@ -46,9 +20,9 @@ services:
       - "127.0.0.1:8011:8011"
     volumes:
       - ../lvyan-lawtext:/data/lvyan-lawtext:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
+    networks:
+      - default
+      - platform-infra
     healthcheck:
       test:
         [
@@ -66,8 +40,8 @@ services:
   web:
     image: ${LEXORA_WEB_IMAGE:-lexora-web:local}
     restart: unless-stopped
-    mem_limit: ${LEXORA_WEB_MEMORY_LIMIT:-256m}
-    memswap_limit: ${LEXORA_WEB_MEMORY_SWAP_LIMIT:-256m}
+    mem_limit: ${LEXORA_WEB_MEMORY_LIMIT:-192m}
+    memswap_limit: ${LEXORA_WEB_MEMORY_SWAP_LIMIT:-192m}
     pids_limit: ${LEXORA_WEB_PIDS_LIMIT:-128}
     environment:
       LEXORA_API_URL: http://api:8011
@@ -91,5 +65,7 @@ services:
       retries: 12
       start_period: 10s
 
-volumes:
-  lexora-postgres-data:
+networks:
+  platform-infra:
+    name: ${PLATFORM_INFRA_NETWORK:-platform-infra}
+    external: true

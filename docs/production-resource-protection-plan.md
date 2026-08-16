@@ -21,13 +21,13 @@
 - `systemd-oomd` 未安装；
 - Docker Build Cache 约 2.58 GiB 可回收，但清理不是本任务的默认授权。
 
-Lexora 已配置运行时限制：
+Lexora 应用已配置运行时限制；PostgreSQL 已迁移到共享 `platform-postgres`，由平台 Compose
+统一设置限制：
 
 | 服务 | Memory | Memory + Swap | PIDs |
 |---|---:|---:|---:|
-| API | 768 MiB | 768 MiB | 256 |
-| PostgreSQL | 512 MiB | 512 MiB | 128 |
-| Web | 256 MiB | 256 MiB | 128 |
+| API | 512 MiB | 512 MiB | 256 |
+| Web | 192 MiB | 192 MiB | 128 |
 
 以下运行容器当前没有 Docker 内存、Swap 或 PID 上限：
 

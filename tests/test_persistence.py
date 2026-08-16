@@ -5,7 +5,11 @@ from uuid import UUID
 
 import pytest
 from agent_platform.application import AgentRunService
-from agent_platform.core import UserContext
+from agent_platform.core import (
+    AgentRunEventCategory,
+    EventExtensionEnvelope,
+    UserContext,
+)
 from north.runtime import MemoryStreamBridge
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -738,6 +742,76 @@ async def test_case_run_can_be_cancelled_and_remains_visible(session_factory) ->
     assert cancelled.run_id == run.id
     assert cancelled.status.value == "cancelled"
     assert (await service.get_latest(case.id)).status.value == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_case_run_activity_history_returns_only_safe_runtime_events(
+    session_factory,
+) -> None:
+    context = UserContext(
+        user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        timezone="Asia/Shanghai",
+        locale="zh-CN",
+    )
+    workspace = CaseWorkspaceService(session_factory, context, parse_material_file)
+    case = await workspace.create_case(LegalCaseCreate(title="活动历史测试"))
+    async with session_factory() as session:
+        unit_of_work = LexoraUnitOfWork(session)
+        thread = await unit_of_work.threads.get_or_create_for_case(
+            context,
+            case_id=case.id,
+            title=case.title,
+        )
+        runs = AgentRunService(unit_of_work)
+        run = await runs.create_run(
+            context,
+            first_human_message="查询法规",
+            thread_id=thread.id,
+        )
+        assert await runs.mark_running(context, run)
+        await unit_of_work.events.append(
+            context,
+            thread_id=thread.id,
+            run_id=run.id,
+            event_type="message.human",
+            category=AgentRunEventCategory.message,
+            content="不得出现在活动历史中",
+        )
+        await unit_of_work.events.append(
+            context,
+            thread_id=thread.id,
+            run_id=run.id,
+            event_type="tool.completed",
+            category=AgentRunEventCategory.tool,
+            content="工具调用已完成",
+            extension=EventExtensionEnvelope(
+                kind="lexora.runtime.activity",
+                schema_version=1,
+                payload={
+                    "runtime_event": "tool.completed",
+                    "tool_name": "search_legal_authorities",
+                    "call_id": "search-1",
+                    "caller": "subagent:legal_researcher",
+                    "secret": "must-not-leak",
+                },
+            ),
+        )
+        assert await runs.mark_completed(context, run, result_message="分析完成")
+        await unit_of_work.commit()
+
+    history = await CaseRunService(session_factory, context).get_latest_activity_history(
+        case.id
+    )
+
+    assert history is not None
+    assert history.run_id == run.id
+    assert history.status.value == "completed"
+    assert len(history.activities) == 1
+    assert history.activities[0].type.value == "tool_completed"
+    assert history.activities[0].tool_name == "search_legal_authorities"
+    assert history.activities[0].call_id == "search-1"
+    assert "must-not-leak" not in history.model_dump_json()
+    assert "不得出现在活动历史中" not in history.model_dump_json()
 
 
 @pytest.mark.asyncio

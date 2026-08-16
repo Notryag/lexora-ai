@@ -81,10 +81,8 @@ Run events API -> reload / history / audit
 ### 3.3 已确认的传输收敛
 
 DeerFlow 使用 SSE、`StreamBridge`、heartbeat、事件 ID、`Last-Event-ID` 和 gap recovery。Lexora
-当前使用一次 POST 请求上的 NDJSON，并在断连时取消任务。
-
-本阶段同步切换为 SSE，并继续使用 `fetch()` 发送 POST 和消费响应，不受浏览器 `EventSource`
-只能 GET 的限制。实现复用 North `StreamBridge`，不在 Lexora 创建第二套 replay 缓冲。
+已经同步为该传输模型，并继续使用 `fetch()` 发送 POST 和消费响应，不受浏览器 `EventSource`
+只能 GET 的限制。实现复用 North `StreamBridge`，没有创建第二套 replay 缓冲。
 
 ## 4. 当前基础与缺口
 
@@ -96,8 +94,11 @@ Lexora 已经具备：
 - `agent_run_events`，并以 Thread 级 `seq` 排序；
 - `message.human`、`message.ai` 和 `agent.input` 事件；
 - 按 Run 查询事件的仓储方法；
-- NDJSON `delta / complete / error` 对话流；
+- SSE `metadata / custom / messages / complete / error / end` 对话流；
 - 一个产品 Run 对应一次用户请求。
+- North RuntimeEvent 到 `agent_run_events` 的安全投影；
+- 最新 Run 的有界活动历史 API；
+- 前端实时活动聚合和刷新后的最新 Run 恢复。
 
 North 已经具备：
 
@@ -110,12 +111,10 @@ North 已经具备：
 
 ### 4.2 主要缺口
 
-1. Lexora 没有把 North `RuntimeEventSink` 接入 `agent_run_events`。
-2. Lexora 当前 `stream_observer` 丢弃所有非根 namespace，只转发最终回答 token。
-3. North 的工具事件尚未携带可靠的 `caller` 和父调用关系。
-4. Subagent 委派目前表现为 `delegate_*` 工具调用，没有稳定的 Subagent 生命周期事件。
-5. Lexora 没有公开 Run 事件读取 API。
-6. 前端只有三个点的等待状态，没有活动状态机和历史恢复能力。
+1. 当前历史接口只恢复案件最新 Run，尚未在每条助手消息旁按 `run_id` 展示各自历史。
+2. 浏览器断线后尚未自动使用已有 GET SSE 端点恢复活动和消息 delta。
+3. RunJournal 第一阶段逐事件提交，尚未增加有界批量写入。
+4. 取消或异常终止后的活动收口仍以产品 Run 状态投影，尚未持久化合成的每项取消终态。
 
 ## 5. 三层可观测性
 
@@ -378,8 +377,12 @@ GET /api/v1/cases/{case_id}/runs/{run_id}/events
 - 响应忽略未知扩展字段；
 - 单次 `limit` 设上限，避免将长 Run 全量加载到首屏。
 
-历史消息响应需要保留 `run_id`。页面才能把某条助手消息与对应的活动历史关联。历史活动在用户
-展开“分析过程”时按需读取，不随消息列表全部预加载。
+当前第一版通过 `GET /cases/{case_id}/run/activities` 读取最新 Run，最多返回最近 256 条事件，
+并只接受 `lexora.runtime.activity` v1 扩展。普通消息、工具参数、模型输出和未知扩展字段不会进入
+响应；受控状态文案根据事件类型重新生成，不信任持久化的任意正文。
+
+后续历史消息响应需要继续保留 `run_id`，页面才能把每条助手消息与对应活动关联。届时历史活动在
+用户展开“分析过程”时按需读取，不随消息列表全部预加载。
 
 ## 11. 前端体验
 
@@ -408,8 +411,8 @@ GET /api/v1/cases/{case_id}/runs/{run_id}/events
 ### 11.2 历史恢复
 
 - `complete` 前端保留本轮活动摘要；
-- 刷新后，消息通过 `run_id` 关联历史；
-- 用户展开时调用 Run events API；
+- 第一版刷新后调用最新 Run activities API；
+- 后续按消息 `run_id` 展开各自的历史；
 - reducer 以 live/persisted event ID 去重，以 `task_id` 或 `call_id` 合并状态；
 - 收到 terminal 事件但没有 start 时也必须创建活动，兼容丢帧或晚订阅；
 - Run 取消时将仍为 running 的活动投影为 cancelled。

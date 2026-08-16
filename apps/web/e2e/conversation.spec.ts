@@ -4,6 +4,44 @@ const caseId = "018f6f7c-3500-7c4a-83e7-64dd8aa83291";
 const materialId = "018f6f7c-3500-7c4a-83e7-64dd8aa83292";
 const threadId = "018f6f7c-3500-7c4a-83e7-64dd8aa83293";
 const runId = "018f6f7c-3500-7c4a-83e7-64dd8aa83294";
+const persistedActivityHistory = {
+  run_id: runId,
+  status: "completed",
+  completed_at: "2026-08-08T00:00:03Z",
+  activities: [
+    {
+      seq: 1,
+      type: "task_started",
+      event_type: "subagent.start",
+      subagent_type: "legal_researcher",
+      task_id: "research-task",
+    },
+    {
+      seq: 2,
+      type: "tool_started",
+      event_type: "tool.started",
+      tool_name: "search_legal_authorities",
+      call_id: "authority-search-1",
+      caller: "subagent:legal_researcher",
+    },
+    {
+      seq: 3,
+      type: "tool_completed",
+      event_type: "tool.completed",
+      tool_name: "search_legal_authorities",
+      call_id: "authority-search-1",
+      caller: "subagent:legal_researcher",
+    },
+    {
+      seq: 4,
+      type: "task_completed",
+      event_type: "subagent.end",
+      subagent_type: "legal_researcher",
+      task_id: "research-task",
+      status: "completed",
+    },
+  ],
+};
 
 test("persists material and continues a cited legal conversation", async ({ page }) => {
   const conversationRequests: string[] = [];
@@ -85,6 +123,10 @@ test("persists material and continues a cited legal conversation", async ({ page
     }
     if (path.endsWith("/messages") && method === "GET") {
       await route.fulfill({ json: messages });
+      return;
+    }
+    if (path.endsWith("/run/activities") && method === "GET") {
+      await route.fulfill({ json: persistedActivityHistory });
       return;
     }
     if (path.endsWith("/messages/stream") && method === "POST") {
@@ -230,6 +272,10 @@ test("persists material and continues a cited legal conversation", async ({ page
   await expect(page.getByText("检索法规依据", { exact: true })).toHaveCount(1);
   await expect(page.getByText("子任务处理中", { exact: true })).toHaveCount(0);
   await expect(page.getByText("delegate_legal_researcher", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("分析过程").getByText("已完成", { exact: true })).toHaveCount(3);
+  await page.reload();
+  await expect(page.getByText("法律资料研究", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("检索法规依据", { exact: true })).toHaveCount(1);
   await expect(page.getByLabel("分析过程").getByText("已完成", { exact: true })).toHaveCount(3);
   await expect(page.getByRole("button", { name: "档案 4，已更新" })).toBeVisible();
   await page.getByRole("button", { name: "档案 4，已更新" }).click();

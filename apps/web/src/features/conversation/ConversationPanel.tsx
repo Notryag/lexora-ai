@@ -40,6 +40,7 @@ type ConversationPanelProps = {
   profileUpdated: boolean;
   messages: ChatMessage[];
   activities: ConversationStreamActivity[];
+  activityState: "running" | "completed" | "failed";
   onCaseTitleChange: (value: string) => void;
   onCaseTitleCommit: () => void;
   onOpenMaterials: () => void;
@@ -59,6 +60,7 @@ export function ConversationPanel({
   profileUpdated,
   messages,
   activities,
+  activityState,
   onCaseTitleChange,
   onCaseTitleCommit,
   onOpenMaterials,
@@ -69,7 +71,11 @@ export function ConversationPanel({
 }: ConversationPanelProps) {
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const activityTimeline = buildActivityTimeline(activities, isSubmitting, Boolean(error));
+  const activityTimeline = buildActivityTimeline(
+    activities,
+    activityState === "running",
+    activityState === "failed",
+  );
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -247,7 +253,7 @@ export function ConversationPanel({
               <div className={styles.activityHeader}>
                 <Activity aria-hidden="true" size={15} />
                 <span>分析过程</span>
-                <small>{isSubmitting ? "进行中" : error ? "未完成" : "已完成"}</small>
+                <small>{activityState === "running" ? "进行中" : activityState === "failed" ? "未完成" : "已完成"}</small>
               </div>
               <ol className={styles.activityList}>
                 {activityTimeline.map((activity) => {

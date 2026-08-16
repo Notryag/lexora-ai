@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi.testclient import TestClient
@@ -9,6 +10,7 @@ from north.runtime import MemoryStreamBridge
 from lexora_ai.api.app import create_app
 from lexora_ai.api.dependencies import (
     get_analyze_case_service,
+    get_case_run_service,
     get_legal_conversation_service,
     get_persistent_conversation_service,
     get_stream_bridge,
@@ -22,6 +24,10 @@ from lexora_ai.application import (
 from lexora_ai.domain import (
     CaseAnalysisRequest,
     CaseConversationTurnResult,
+    CaseRunActivity,
+    CaseRunActivityHistory,
+    CaseRunActivityType,
+    CaseRunStatus,
     ConversationTurnRequest,
 )
 from lexora_ai.infrastructure import (
@@ -108,6 +114,26 @@ class UnavailablePersistentConversationService:
     ):
         del case_id, request, on_text_delta, on_run_started
         raise ModelTemporarilyUnavailableError("模型服务暂时不可用，请稍后重试。")
+
+
+class FakeCaseRunService:
+    async def get_latest_activity_history(self, case_id):
+        return CaseRunActivityHistory(
+            run_id=UUID("018f6f7c-3500-7c4a-83e7-64dd8aa83294"),
+            status=CaseRunStatus.completed,
+            activities=[
+                CaseRunActivity(
+                    seq=3,
+                    type=CaseRunActivityType.tool_completed,
+                    event_type="tool.completed",
+                    content="工具调用已完成",
+                    call_id="search-1",
+                    caller="subagent:legal_researcher",
+                    tool_name="search_legal_authorities",
+                )
+            ],
+            completed_at=datetime(2026, 8, 16, tzinfo=UTC),
+        )
 
 
 def parse_sse(text: str) -> list[dict[str, object]]:
@@ -199,6 +225,37 @@ def test_case_conversation_stream_classifies_provider_unavailability() -> None:
             },
         }
     ]
+
+
+def test_case_run_activities_returns_persisted_safe_projection() -> None:
+    app = create_app()
+    app.dependency_overrides[get_case_run_service] = FakeCaseRunService
+    case_id = "018f6f7c-3500-7c4a-83e7-64dd8aa83291"
+
+    response = TestClient(app).get(f"/api/v1/cases/{case_id}/run/activities")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "run_id": "018f6f7c-3500-7c4a-83e7-64dd8aa83294",
+        "status": "completed",
+        "activities": [
+            {
+                "seq": 3,
+                "type": "tool_completed",
+                "event_type": "tool.completed",
+                "content": "工具调用已完成",
+                "call_id": "search-1",
+                "caller": "subagent:legal_researcher",
+                "kind": None,
+                "parent_call_id": None,
+                "status": None,
+                "tool_name": "search_legal_authorities",
+                "subagent_type": None,
+                "task_id": None,
+            }
+        ],
+        "completed_at": "2026-08-16T00:00:00Z",
+    }
 
 
 def test_create_analysis() -> None:

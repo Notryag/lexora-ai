@@ -6,13 +6,23 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from agent_platform.core import AgentRunEventCategory, EventExtensionEnvelope, UserContext
+from agent_platform.core import (
+    AgentRunEvent,
+    AgentRunEventCategory,
+    EventExtensionEnvelope,
+    UserContext,
+)
+from pydantic import ValidationError
 
 from lexora_ai.application.ports import RuntimeEventSink
 from lexora_ai.db.session import SessionFactory
 from lexora_ai.db.unit_of_work import LexoraUnitOfWork
+from lexora_ai.domain import CaseRunActivity
 
 logger = logging.getLogger(__name__)
+
+_ACTIVITY_EXTENSION_KIND = "lexora.runtime.activity"
+
 
 @dataclass(frozen=True, slots=True)
 class ProjectedRunEvent:
@@ -67,11 +77,49 @@ def project_runtime_event(event: object) -> ProjectedRunEvent | None:
         category=category,
         content=content,
         extension=EventExtensionEnvelope(
-            kind="lexora.runtime.activity",
+            kind=_ACTIVITY_EXTENSION_KIND,
             schema_version=1,
             payload=_safe_payload(event_type, metadata, event_content),
         ),
     )
+
+
+def live_activity_payload(event: ProjectedRunEvent) -> dict[str, object]:
+    return _activity_fields(
+        event.event_type,
+        content=event.content,
+        payload=event.extension.payload,
+    )
+
+
+def persisted_run_activity(event: AgentRunEvent) -> CaseRunActivity | None:
+    extension = event.extension
+    if (
+        extension is None
+        or extension.kind != _ACTIVITY_EXTENSION_KIND
+        or extension.schema_version != 1
+    ):
+        return None
+    try:
+        return CaseRunActivity.model_validate(
+            {
+                "seq": event.seq,
+                **_activity_fields(
+                    event.event_type,
+                    content=_persisted_activity_content(
+                        event.event_type,
+                        extension.payload.get("status"),
+                    ),
+                    payload=extension.payload,
+                ),
+            }
+        )
+    except (KeyError, ValidationError):
+        logger.warning(
+            "Ignoring malformed persisted runtime activity",
+            extra={"run_id": str(event.run_id), "event_type": event.event_type},
+        )
+        return None
 
 
 class RunJournal:
@@ -175,12 +223,59 @@ def _safe_payload(
     return payload
 
 
+def _activity_fields(
+    event_type: str,
+    *,
+    content: str | None,
+    payload: Mapping[str, Any],
+) -> dict[str, object]:
+    status = payload.get("status")
+    live_type = {
+        "model.started": "model_started",
+        "model.completed": "model_completed",
+        "model.error": "model_failed",
+        "tool.started": "tool_started",
+        "tool.completed": "tool_completed",
+        "tool.error": "tool_failed",
+        "subagent.start": "task_started",
+        "subagent.step": "task_running",
+        "subagent.end": (
+            "task_completed"
+            if status == "completed"
+            else "task_timed_out"
+            if status == "timed_out"
+            else "task_failed"
+        ),
+    }[event_type]
+    return {
+        **payload,
+        "type": live_type,
+        "event_type": event_type,
+        "content": content,
+    }
+
+
 def _subagent_end_content(status: object) -> str:
     return {
         "completed": "子任务已完成",
         "failed": "子任务执行失败",
         "timed_out": "子任务执行超时",
     }.get(status, "子任务已结束")
+
+
+def _persisted_activity_content(event_type: str, status: object) -> str | None:
+    if event_type == "subagent.end":
+        return _subagent_end_content(status)
+    return {
+        "model.started": "正在分析",
+        "model.completed": "分析步骤已完成",
+        "model.error": "分析过程发生错误",
+        "tool.started": "正在调用工具",
+        "tool.completed": "工具调用已完成",
+        "tool.error": "工具调用失败",
+        "subagent.start": "正在执行子任务",
+        "subagent.step": None,
+    }[event_type]
 
 
 def _text(value: object) -> str | None:

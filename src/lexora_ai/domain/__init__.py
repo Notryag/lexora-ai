@@ -75,7 +75,13 @@ from lexora_ai.domain.research_datasets import (
     ResearchNormalizationPlan,
     ResearchRecordKind,
 )
-from lexora_ai.domain.runs import CaseRun, CaseRunStatus
+from lexora_ai.domain.runs import (
+    CaseRun,
+    CaseRunActivity,
+    CaseRunActivityHistory,
+    CaseRunActivityType,
+    CaseRunStatus,
+)
 from lexora_ai.domain.sufficiency import FollowUpQuestion, SufficiencyDecision, SufficiencyGate
 from lexora_ai.domain.workspaces import (
     CaseConversationMessage,
@@ -105,6 +111,9 @@ __all__ = [
     "CaseLawSourceUpdate",
     "CaseLawStatus",
     "CaseRun",
+    "CaseRunActivity",
+    "CaseRunActivityHistory",
+    "CaseRunActivityType",
     "CaseRunStatus",
     "CaseMaterial",
     "CaseProfile",

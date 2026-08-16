@@ -247,6 +247,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cases/{case_id}/run/activities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Case Run Activities */
+        get: operations["get_case_run_activities_api_v1_cases__case_id__run_activities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/runs/{run_id}/events/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream Existing Case Run */
+        get: operations["stream_existing_case_run_api_v1_cases__case_id__runs__run_id__events_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cases/{case_id}/run/cancel": {
         parameters: {
             query?: never;
@@ -461,6 +495,11 @@ export interface components {
             /** Missing Information */
             missing_information?: string[];
             factor_profile?: components["schemas"]["CaseFactorProfile"];
+            /**
+             * Pending Answer Targets
+             * @description Application-maintained targets that a factual follow-up can continue answering.
+             */
+            pending_answer_targets?: components["schemas"]["LegalTurnAnswerTarget"][];
         };
         /** CaseProfileUpdate */
         CaseProfileUpdate: {
@@ -479,6 +518,11 @@ export interface components {
             /** Missing Information */
             missing_information?: string[];
             factor_profile?: components["schemas"]["CaseFactorProfile"];
+            /**
+             * Pending Answer Targets
+             * @description Application-maintained targets that a factual follow-up can continue answering.
+             */
+            pending_answer_targets?: components["schemas"]["LegalTurnAnswerTarget"][];
         };
         /** CaseRun */
         CaseRun: {
@@ -516,6 +560,50 @@ export interface components {
              */
             updated_at: string;
         };
+        /** CaseRunActivity */
+        CaseRunActivity: {
+            /** Seq */
+            seq: number;
+            type: components["schemas"]["CaseRunActivityType"];
+            /** Event Type */
+            event_type: string;
+            /** Content */
+            content?: string | null;
+            /** Call Id */
+            call_id?: string | null;
+            /** Caller */
+            caller?: string | null;
+            /** Kind */
+            kind?: string | null;
+            /** Parent Call Id */
+            parent_call_id?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Tool Name */
+            tool_name?: string | null;
+            /** Subagent Type */
+            subagent_type?: string | null;
+            /** Task Id */
+            task_id?: string | null;
+        };
+        /** CaseRunActivityHistory */
+        CaseRunActivityHistory: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            status: components["schemas"]["CaseRunStatus"];
+            /** Activities */
+            activities?: components["schemas"]["CaseRunActivity"][];
+            /** Completed At */
+            completed_at?: string | null;
+        };
+        /**
+         * CaseRunActivityType
+         * @enum {string}
+         */
+        CaseRunActivityType: "model_started" | "model_completed" | "model_failed" | "tool_started" | "tool_completed" | "tool_failed" | "task_started" | "task_running" | "task_completed" | "task_failed" | "task_timed_out";
         /**
          * CaseRunStatus
          * @enum {string}
@@ -720,6 +808,28 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * LegalTurnAnswerKind
+         * @enum {string}
+         */
+        LegalTurnAnswerKind: "rule" | "classification" | "estimate" | "calculation" | "action";
+        /**
+         * LegalTurnAnswerMode
+         * @enum {string}
+         */
+        LegalTurnAnswerMode: "direct" | "conditional";
+        /** LegalTurnAnswerTarget */
+        LegalTurnAnswerTarget: {
+            /**
+             * Question
+             * @description One question the user actually asked, without adding a new issue.
+             */
+            question: string;
+            /** @description Use direct when current facts support a bounded answer; use conditional when the answer must show explicit branches. Neither mode permits withholding the answer. */
+            mode: components["schemas"]["LegalTurnAnswerMode"];
+            /** @description Classify the requested deliverable. Rule and classification targets are answered with bounded branches and do not trigger automatic follow-up questions. */
+            kind: components["schemas"]["LegalTurnAnswerKind"];
         };
         /**
          * MaterialKind
@@ -1300,7 +1410,9 @@ export interface operations {
     stream_case_conversation_turn_api_v1_cases__case_id__messages_stream_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "Last-Event-ID"?: string | null;
+            };
             path: {
                 case_id: string;
             };
@@ -1349,6 +1461,69 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CaseRun"] | null;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_case_run_activities_api_v1_cases__case_id__run_activities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseRunActivityHistory"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_existing_case_run_api_v1_cases__case_id__runs__run_id__events_stream_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Last-Event-ID"?: string | null;
+            };
+            path: {
+                case_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

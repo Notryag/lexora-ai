@@ -49,6 +49,7 @@ from lexora_ai.domain import (
     CaseMaterial,
     CaseProfileUpdate,
     CaseRun,
+    CaseRunActivityHistory,
     ConversationTurnRequest,
     ConversationTurnResult,
     LegalCase,
@@ -522,6 +523,21 @@ async def get_case_run(
 ) -> CaseRun | None:
     try:
         return await service.get_latest(case_id)
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get(
+    "/cases/{case_id}/run/activities",
+    response_model=CaseRunActivityHistory | None,
+    tags=["case conversations"],
+)
+async def get_case_run_activities(
+    case_id: UUID,
+    service: Annotated[CaseRunService, Depends(get_case_run_service)],
+) -> CaseRunActivityHistory | None:
+    try:
+        return await service.get_latest_activity_history(case_id)
     except CaseNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 

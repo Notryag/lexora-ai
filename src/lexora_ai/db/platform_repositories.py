@@ -514,6 +514,7 @@ class AgentRunEventRepository:
         run_id: UUID,
         *,
         after_seq: int = 0,
+        limit: int | None = None,
     ) -> list[AgentRunEvent]:
         run = await self.session.scalar(
             select(AgentRunRow.id).where(
@@ -523,11 +524,17 @@ class AgentRunEventRepository:
         )
         if run is None:
             return []
-        rows = await self.session.scalars(
-            select(AgentRunEventRow)
-            .where(AgentRunEventRow.run_id == run_id, AgentRunEventRow.seq > after_seq)
-            .order_by(AgentRunEventRow.seq.asc())
+        statement = select(AgentRunEventRow).where(
+            AgentRunEventRow.run_id == run_id,
+            AgentRunEventRow.seq > after_seq,
         )
+        if limit is None:
+            statement = statement.order_by(AgentRunEventRow.seq.asc())
+            rows = list(await self.session.scalars(statement))
+        else:
+            statement = statement.order_by(AgentRunEventRow.seq.desc()).limit(limit)
+            rows = list(await self.session.scalars(statement))
+            rows.reverse()
         return [event_from_row(row) for row in rows]
 
     async def get_message_for_run(

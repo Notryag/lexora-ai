@@ -19,6 +19,7 @@ export type CaseMaterial = components["schemas"]["CaseMaterial"];
 export type StoredCaseMaterial = components["schemas"]["StoredCaseMaterial"];
 export type PersistedMessage = components["schemas"]["CaseConversationMessage"];
 export type CaseRun = components["schemas"]["CaseRun"];
+export type CaseRunActivityHistory = components["schemas"]["CaseRunActivityHistory"];
 type CaseConversationTurnResult = components["schemas"]["CaseConversationTurnResult"];
 
 function requireData<T>(data: T | undefined, error: unknown): T {
@@ -118,6 +119,16 @@ export async function listMessages(caseId: string): Promise<PersistedMessage[]> 
   const { data, error } = await apiClient.GET("/api/v1/cases/{case_id}/messages", {
     params: { path: { case_id: caseId } },
   });
+  return requireData(data, error);
+}
+
+export async function getLatestRunActivities(
+  caseId: string,
+): Promise<CaseRunActivityHistory | null> {
+  const { data, error } = await apiClient.GET(
+    "/api/v1/cases/{case_id}/run/activities",
+    { params: { path: { case_id: caseId } } },
+  );
   return requireData(data, error);
 }
 

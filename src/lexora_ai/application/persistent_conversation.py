@@ -34,7 +34,11 @@ from lexora_ai.application.ports import (
     RunStreamBridge,
     TextDeltaSink,
 )
-from lexora_ai.application.run_journal import ProjectedRunEvent, RunJournal
+from lexora_ai.application.run_journal import (
+    ProjectedRunEvent,
+    RunJournal,
+    live_activity_payload,
+)
 from lexora_ai.db.session import SessionFactory
 from lexora_ai.db.unit_of_work import LexoraUnitOfWork
 from lexora_ai.domain import (
@@ -364,7 +368,7 @@ class PersistentLegalConversationService:
                 self._stream_bridge,
                 run_key,
                 "custom",
-                _live_activity_payload(event),
+                live_activity_payload(event),
             )
 
         run_journal = RunJournal(
@@ -705,34 +709,6 @@ def _completed_history(messages: list[ConversationMessage]) -> list[Conversation
         if messages[index].role == ConversationRole.assistant:
             return messages[: index + 1]
     return []
-
-
-def _live_activity_payload(event: ProjectedRunEvent) -> dict[str, object]:
-    payload = dict(event.extension.payload)
-    status = payload.get("status")
-    live_type = {
-        "model.started": "model_started",
-        "model.completed": "model_completed",
-        "model.error": "model_failed",
-        "tool.started": "tool_started",
-        "tool.completed": "tool_completed",
-        "tool.error": "tool_failed",
-        "subagent.start": "task_started",
-        "subagent.step": "task_running",
-        "subagent.end": (
-            "task_completed"
-            if status == "completed"
-            else "task_timed_out"
-            if status == "timed_out"
-            else "task_failed"
-        ),
-    }[event.event_type]
-    return {
-        "type": live_type,
-        "event_type": event.event_type,
-        "content": event.content,
-        **payload,
-    }
 
 
 def _run_stream_error_payload(error: BaseException) -> dict[str, str]:

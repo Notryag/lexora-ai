@@ -9,9 +9,12 @@ from lexora_ai.application.errors import (
     ActiveCaseRunNotFoundError,
     CaseNotFoundError,
 )
+from lexora_ai.application.run_journal import persisted_run_activity
 from lexora_ai.db.session import SessionFactory
 from lexora_ai.db.unit_of_work import LexoraUnitOfWork
-from lexora_ai.domain import CaseRun, CaseRunStatus
+from lexora_ai.domain import CaseRun, CaseRunActivityHistory, CaseRunStatus
+
+_ACTIVITY_HISTORY_LIMIT = 256
 
 
 def _run_status(run, *, status: CaseRunStatus | None = None) -> CaseRun:
@@ -58,6 +61,36 @@ class CaseRunService:
             if run is None or run.thread_id != thread.id:
                 return None
             return _run_status(run)
+
+    async def get_latest_activity_history(
+        self,
+        case_id: UUID,
+    ) -> CaseRunActivityHistory | None:
+        async with self._session_factory() as session:
+            unit_of_work = LexoraUnitOfWork(session)
+            if await unit_of_work.cases.get(self._context, case_id) is None:
+                raise CaseNotFoundError("Case not found")
+            thread = await unit_of_work.threads.get_for_case(self._context, case_id)
+            if thread is None:
+                return None
+            run = await unit_of_work.runs.get_latest_for_thread(self._context, thread.id)
+            if run is None:
+                return None
+            events = await unit_of_work.events.list_for_run(
+                self._context,
+                run.id,
+                limit=_ACTIVITY_HISTORY_LIMIT,
+            )
+            return CaseRunActivityHistory(
+                run_id=run.id,
+                status=CaseRunStatus(run.status.value),
+                activities=[
+                    activity
+                    for event in events
+                    if (activity := persisted_run_activity(event)) is not None
+                ],
+                completed_at=run.completed_at,
+            )
 
     async def cancel_active(self, case_id: UUID) -> CaseRun:
         async with self._session_factory() as session:

@@ -16,15 +16,15 @@ export type ChatMessage = {
 
 export type ConversationStreamActivity = {
   type: string;
-  event_type?: string;
+  event_type?: string | null;
   content?: string | null;
-  call_id?: string;
-  caller?: string;
-  kind?: string;
-  parent_call_id?: string;
-  status?: string;
-  tool_name?: string;
-  subagent_type?: string;
-  task_id?: string;
+  call_id?: string | null;
+  caller?: string | null;
+  kind?: string | null;
+  parent_call_id?: string | null;
+  status?: string | null;
+  tool_name?: string | null;
+  subagent_type?: string | null;
+  task_id?: string | null;
   [key: string]: unknown;
 };

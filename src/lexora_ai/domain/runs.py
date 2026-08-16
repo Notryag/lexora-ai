@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CaseRunStatus(StrEnum):
@@ -28,3 +28,39 @@ class CaseRun(BaseModel):
     completed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class CaseRunActivityType(StrEnum):
+    model_started = "model_started"
+    model_completed = "model_completed"
+    model_failed = "model_failed"
+    tool_started = "tool_started"
+    tool_completed = "tool_completed"
+    tool_failed = "tool_failed"
+    task_started = "task_started"
+    task_running = "task_running"
+    task_completed = "task_completed"
+    task_failed = "task_failed"
+    task_timed_out = "task_timed_out"
+
+
+class CaseRunActivity(BaseModel):
+    seq: int = Field(ge=1)
+    type: CaseRunActivityType
+    event_type: str
+    content: str | None = None
+    call_id: str | None = None
+    caller: str | None = None
+    kind: str | None = None
+    parent_call_id: str | None = None
+    status: str | None = None
+    tool_name: str | None = None
+    subagent_type: str | None = None
+    task_id: str | None = None
+
+
+class CaseRunActivityHistory(BaseModel):
+    run_id: UUID
+    status: CaseRunStatus
+    activities: list[CaseRunActivity] = Field(default_factory=list)
+    completed_at: datetime | None = None

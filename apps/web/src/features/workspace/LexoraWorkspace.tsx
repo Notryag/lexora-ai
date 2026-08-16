@@ -23,6 +23,7 @@ import {
   createCase,
   deleteMaterial,
   cancelCaseRun,
+  getLatestRunActivities,
   listCases,
   listMaterials,
   listMessages,
@@ -69,6 +70,11 @@ export function LexoraWorkspace() {
   const messagesQuery = useQuery({
     queryKey: ["case-messages", activeCaseId],
     queryFn: () => listMessages(activeCaseId as string),
+    enabled: activeCaseId !== null,
+  });
+  const activitiesQuery = useQuery({
+    queryKey: ["case-run-activities", activeCaseId],
+    queryFn: () => getLatestRunActivities(activeCaseId as string),
     enabled: activeCaseId !== null,
   });
 
@@ -130,6 +136,7 @@ export function LexoraWorkspace() {
         if (caseId) {
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: ["case-messages", caseId] }),
+            queryClient.invalidateQueries({ queryKey: ["case-run-activities", caseId] }),
             queryClient.invalidateQueries({ queryKey: ["cases"] }),
           ]);
         }
@@ -270,7 +277,20 @@ export function LexoraWorkspace() {
     conversation.reset();
   }
 
-  const errorSource = conversation.error ?? casesQuery.error ?? messagesQuery.error;
+  const historicalActivities = activitiesQuery.data?.activities ?? [];
+  const showingLiveActivities = conversation.isPending || activities.length > 0;
+  const displayedActivities = showingLiveActivities ? activities : historicalActivities;
+  const activityState = conversation.isPending
+    ? "running"
+    : conversation.error && activities.length
+      ? "failed"
+      : activities.length
+        ? "completed"
+        : runActivityState(activitiesQuery.data?.status);
+  const errorSource = conversation.error
+    ?? casesQuery.error
+    ?? messagesQuery.error
+    ?? activitiesQuery.error;
   const error = errorSource instanceof Error ? errorSource.message : null;
   const materials = materialsQuery.data ?? [];
   const profile = selectedCase ? normalizeCaseProfile(selectedCase.profile) : emptyCaseProfile;
@@ -345,7 +365,8 @@ export function LexoraWorkspace() {
         profileItemCount={profileItemCount}
         profileUpdated={profileUpdated}
         messages={messages}
-        activities={activities}
+        activities={displayedActivities}
+        activityState={activityState}
         onCaseTitleChange={setCaseTitle}
         onCaseTitleCommit={() => void titleMutation.mutate()}
         onExport={exportCaseRecord}
@@ -384,4 +405,12 @@ export function LexoraWorkspace() {
       ) : null}
     </main>
   );
+}
+
+function runActivityState(
+  status: "queued" | "running" | "needs_clarification" | "completed" | "failed" | "cancelled" | undefined,
+): "running" | "completed" | "failed" {
+  if (status === "queued" || status === "running") return "running";
+  if (status === "failed" || status === "cancelled") return "failed";
+  return "completed";
 }

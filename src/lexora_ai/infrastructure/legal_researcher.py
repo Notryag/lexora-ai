@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from north import SubagentSpec
+from north import AgentDefinition
 
 from lexora_ai.domain import LegalResearchDossier
 
@@ -33,17 +33,17 @@ _LEGAL_RESEARCHER_PROMPT = """你是法析 Lexora 的法律研究子 Agent。
 """
 
 
-def build_legal_researcher_subagent(
+def build_legal_researcher_definition(
     tools: Sequence[Any],
     *,
     input_builder=None,
-) -> SubagentSpec:
+) -> AgentDefinition:
     assigned_tools = tuple(
         tool for tool in tools if getattr(tool, "name", None) in LEGAL_RESEARCH_TOOL_NAMES
     )
     if not assigned_tools:
         raise ValueError("legal researcher requires at least one research tool")
-    return SubagentSpec(
+    return AgentDefinition(
         name=LEGAL_RESEARCHER_NAME,
         description=(
             "Use for legal rules, authority verification, or case comparisons. Runtime supplies "

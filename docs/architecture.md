@@ -4,6 +4,11 @@
 
 This document describes the current evolving implementation. It is not a final platform design.
 
+The Plugin/Service/Provider/Consumer model is documented separately in
+[plugin-architecture.md](plugin-architecture.md). North now receives explicit host plugins; the
+remaining target work is to move title generation from the installed middleware to an asynchronous
+Title Service.
+
 ## Current Shape
 
 ```text
@@ -40,7 +45,7 @@ Lexora converts product materials into those contracts, persists deterministic c
 owns its query normalization and legal authority matching, and projects retrieved results back to
 references such as `[M1:C1]`, `[L...:C...]`, and `[C...:S...]`.
 
-### Thread Title Generation
+### Thread Title Generation (Current Implementation)
 
 首轮案件对话的自动命名使用 North 的通用 `TitleMiddleware`，而不是在 Lexora 应用服务中另起一
 次模型请求。Middleware 在同一个 Agent Run 的 `after_model` / `aafter_model` 阶段判断是否为
@@ -51,6 +56,10 @@ references such as `[M1:C1]`, `[L...:C...]`, and `[C...:S...]`.
 Lexora 在 Run 成功提交时读取 runtime title，并在“案件仍为未命名”这一条件下原子更新
 `legal_cases.title` 与 `conversation_threads.title`。用户手动编辑后的案件标题不会被覆盖。
 North 不知道案件或法律领域，产品层只负责把通用 thread state 投影到自己的元数据模型。
+
+The target migration for this capability is described in
+[plugin-architecture.md](plugin-architecture.md#title-的目标设计). Until that migration is
+implemented, the middleware behavior above remains the current source of truth.
 
 ## Agent Platform Boundary
 
@@ -375,7 +384,7 @@ changes can cause a one-time cache-prefix miss after deployment; provider cache 
 final production check.
 
 Delegation follows DeerFlow's separation between a short user-facing task description and the specialist
-task. Lexora retains one measured host-specific extension: North's generic `SubagentSpec.input_builder`
+task. Lexora retains one measured host-specific extension: North's generic `AgentDefinition.input_builder`
 lets the host attach the exact current `case_data` after the Supervisor has chosen a specialist. The
 Supervisor therefore states only the objective and boundaries instead of regenerating user facts inside
 every tool argument. North neither reads nor interprets the legal payload. This difference is retained only

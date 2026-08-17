@@ -7,7 +7,7 @@ import pytest
 from lexora_ai.domain import LegalResearchDossier
 from lexora_ai.infrastructure.legal_researcher import (
     LEGAL_RESEARCHER_TOOL,
-    build_legal_researcher_subagent,
+    build_legal_researcher_definition,
     partition_legal_research_tools,
 )
 
@@ -23,7 +23,7 @@ def test_legal_researcher_has_a_bounded_reviewed_source_tool_surface() -> None:
     cases = _tool("search_guiding_cases")
     materials = _tool("search_case_materials")
 
-    spec = build_legal_researcher_subagent([authority, cases, materials])
+    spec = build_legal_researcher_definition([authority, cases, materials])
 
     assert spec.tool_name == LEGAL_RESEARCHER_TOOL
     assert spec.tools == (authority, cases)

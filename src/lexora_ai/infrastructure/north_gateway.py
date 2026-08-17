@@ -31,12 +31,12 @@ from lexora_ai.application import (
 from lexora_ai.application.ports import TextDeltaSink
 from lexora_ai.config import Settings
 from lexora_ai.domain import CaseAnalysisRequest, ConversationTurnRequest
-from lexora_ai.infrastructure.case_analyst import build_case_analyst_subagent
+from lexora_ai.infrastructure.agent_plugins import build_lexora_plugins
+from lexora_ai.infrastructure.case_analyst import build_case_analyst_definition
 from lexora_ai.infrastructure.legal_researcher import (
-    build_legal_researcher_subagent,
+    build_legal_researcher_definition,
     partition_legal_research_tools,
 )
-from lexora_ai.infrastructure.legal_turn_middleware import LegalDelegationMiddleware
 from lexora_ai.infrastructure.north_tools import build_lexora_tools
 from lexora_ai.prompts import (
     LEXORA_SYSTEM_PROMPT,
@@ -220,26 +220,28 @@ class NorthCaseAnalysisGateway:
                 case_memory,
                 jurisdiction=self._settings.legal_jurisdiction,
             )
-            subagents = [
-                build_case_analyst_subagent(
+            definitions = [
+                build_case_analyst_definition(
                     result_processor=lambda result, _runtime: case_context.process(result),
                     input_builder=specialist_input,
                 )
             ]
             if research_tools:
-                subagents.append(
-                    build_legal_researcher_subagent(
+                definitions.append(
+                    build_legal_researcher_definition(
                         research_tools,
                         input_builder=specialist_input,
                     )
                 )
+            plugins = build_lexora_plugins(
+                supervisor_tools=supervisor_tools,
+                definitions=definitions,
+            )
             result = await RunExecutor(self._stream_bridge, manager).execute(
                 record,
                 agent_factory=lambda: build_agent(
                     self._get_config(),
-                    tools=supervisor_tools,
-                    additional_middlewares=[LegalDelegationMiddleware()],
-                    subagents=subagents,
+                    plugins=plugins,
                     checkpointer=self._checkpointer,
                 ),
                 graph_input={"messages": graph_messages},
@@ -311,9 +313,6 @@ class NorthCaseAnalysisGateway:
             model_name=self._settings.app_model_name,
             model_options=model_options,
             system_prompt=LEXORA_SYSTEM_PROMPT,
-            auto_title_enabled=True,
-            title_model_name=self._settings.app_model_name,
-            title_max_chars=32,
         )
         self._client = AppClient(config)
         return self._client

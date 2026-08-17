@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from north import SubagentSpec
+from north import AgentDefinition
 
 from lexora_ai.domain import LegalTurnAssessment
 
@@ -21,8 +21,8 @@ classification 不生成追问候选。普通寒暄返回 social 和空案件字
 """
 
 
-def build_case_analyst_subagent(*, result_processor=None, input_builder=None) -> SubagentSpec:
-    return SubagentSpec(
+def build_case_analyst_definition(*, result_processor=None, input_builder=None) -> AgentDefinition:
+    return AgentDefinition(
         name=CASE_ANALYST_NAME,
         description=(
             "Required when the user asks about their own or another person's concrete legal "

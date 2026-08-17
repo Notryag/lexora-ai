@@ -5,12 +5,12 @@ import pytest
 from lexora_ai.domain import LegalTurnAssessment
 from lexora_ai.infrastructure.case_analyst import (
     CASE_ANALYST_TOOL,
-    build_case_analyst_subagent,
+    build_case_analyst_definition,
 )
 
 
 def test_case_analyst_is_bounded_and_structured() -> None:
-    spec = build_case_analyst_subagent()
+    spec = build_case_analyst_definition()
 
     assert spec.tool_name == CASE_ANALYST_TOOL
     assert spec.tools == ()

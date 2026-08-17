@@ -132,7 +132,7 @@ SubagentRuntime/Provider 在执行时强制。子 Agent 实例拥有自己的上
 |---|---|---|
 | `lexora.title` Plugin 注册 `TitleMiddleware` | 继续由 Plugin 完整拥有标题实现 | 没有真实 Service 消费者前不拆分 |
 | `TitleMiddleware` 在首轮模型完成后生成标题 | 保持同一 Run 内生成标题，不创建额外 Run | 先验证延迟、fallback 和持久化 |
-| `SubagentSpec` 在 `build_agent` 时预编译子 Agent | SubagentRuntime 按 Definition 在委派时创建实例 | 需单独处理取消、超时、Checkpointer、事件归属和结果 Schema |
+| Lexora Plugin 注册 `AgentDefinition`，委派工具在调用时懒创建子 Agent | 继续由 SubagentRuntime 按 Definition 创建实例 | 重点验证取消、超时、Checkpointer、事件归属和结果 Schema |
 | 裸 `additional_middlewares` | 宿主 Plugin 通过注册表安装 Middleware | 直接切换，不保留旧装配入口 |
 
 目标模型不是当前 North 已全部实现的契约。每一行都必须有独立迁移切片和回归测试，不能
@@ -177,11 +177,14 @@ North 提供最小 `Plugin`、`PluginContext`、`RegistrationHandle` 和分作�
 Lexora 通过 `LexoraTitlePlugin` 注册 North `TitleMiddleware`。覆盖标题 Prompt、fallback、
 持久化和前端体验；不增加 Title Service 或 Provider 兼容层。
 
-### Phase 3：子 Agent 能力
+### Phase 3：子 Agent 能力（基础切片已完成）
 
-North 提供进程内 SubagentRuntime。Lexora 的 `LegalSubagentsPlugin` 注册 Case Analyst 和
-Legal Researcher Definition，并注册受控委派工具。现有 `SubagentSpec` 直接替换为
-Definition、Provider 和 Runtime 请求协议，不增加兼容适配层。
+North 提供进程内 SubagentRuntime。Lexora 的 `LegalSubagentsPlugin` 已注册 Case Analyst 和
+Legal Researcher Definition，并注册受控委派工具。委派工具调用时才创建子 Agent，不保留
+预编译实例或兼容适配层。
+
+下一步是用真实对话验收 Supervisor → Case Analyst → Legal Researcher 的链路，并补齐取消、
+超时、事件归属、中文展示名称和前端同一活动记录的状态更新。
 
 ### Phase 4：观察性和产品投影
 

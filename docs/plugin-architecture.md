@@ -131,7 +131,7 @@ SubagentRuntime/Provider 在执行时强制。子 Agent 实例拥有自己的上
 | 当前实现 | 目标模型 | 迁移边界 |
 |---|---|---|
 | `lexora.title` Plugin 注册 `TitleMiddleware` | 继续由 Plugin 完整拥有标题实现 | 没有真实 Service 消费者前不拆分 |
-| `TitleMiddleware` 在首轮模型完成后生成标题 | 保持同一 Run 内非阻塞主回答的行为 | 先验证延迟、fallback 和持久化 |
+| `TitleMiddleware` 在首轮模型完成后生成标题 | 保持同一 Run 内生成标题，不创建额外 Run | 先验证延迟、fallback 和持久化 |
 | `SubagentSpec` 在 `build_agent` 时预编译子 Agent | SubagentRuntime 按 Definition 在委派时创建实例 | 需单独处理取消、超时、Checkpointer、事件归属和结果 Schema |
 | 裸 `additional_middlewares` | 宿主 Plugin 通过注册表安装 Middleware | 直接切换，不保留旧装配入口 |
 

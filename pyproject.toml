@@ -33,7 +33,7 @@ dev = [
 
 [tool.uv.sources]
 agent-application-platform = { git = "https://github.com/Notryag/dayboard.git", rev = "c096bd4", subdirectory = "packages/agent-platform" }
-north = { git = "https://github.com/Notryag/north-agent.git", rev = "a7bf64e", subdirectory = "packages/harness" }
+north = { git = "https://github.com/Notryag/north-agent.git", rev = "1309838", subdirectory = "packages/harness" }
 rag-core = { path = "packages/rag-core", editable = true }
 
 [project.scripts]

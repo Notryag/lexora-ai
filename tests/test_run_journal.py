@@ -63,12 +63,17 @@ def test_runtime_projection_keeps_bounded_subagent_activity_description() -> Non
                 "description": "  梳理婚姻关系事实\n和回答目标  ",
                 "task_id": "task-1",
             },
-            metadata={"task_id": "task-1", "subagent_type": "case_analyst"},
+            metadata={
+                "task_id": "task-1",
+                "subagent_type": "case_analyst",
+                "display_name": "案件分析 Agent",
+            },
         )
     )
 
     assert projected is not None
     assert projected.extension.payload["description"] == "梳理婚姻关系事实 和回答目标"
+    assert projected.extension.payload["display_name"] == "案件分析 Agent"
 
 
 def test_runtime_projection_keeps_bounded_legal_search_description() -> None:

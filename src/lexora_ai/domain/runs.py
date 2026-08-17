@@ -53,6 +53,7 @@ class CaseRunActivity(BaseModel):
     call_id: str | None = None
     caller: str | None = None
     description: str | None = None
+    display_name: str | None = None
     kind: str | None = None
     latency_ms: int | None = Field(default=None, ge=0)
     parent_call_id: str | None = None

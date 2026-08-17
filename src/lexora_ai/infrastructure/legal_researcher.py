@@ -45,6 +45,7 @@ def build_legal_researcher_definition(
         raise ValueError("legal researcher requires at least one research tool")
     return AgentDefinition(
         name=LEGAL_RESEARCHER_NAME,
+        display_name="法律研究 Agent",
         description=(
             "Use for legal rules, authority verification, or case comparisons. Runtime supplies "
             "the exact user question and case_data, so do not reproduce them in the task. It may "

@@ -25,6 +25,7 @@ export type ConversationStreamActivity = {
   call_id?: string | null;
   caller?: string | null;
   description?: string | null;
+  display_name?: string | null;
   kind?: string | null;
   latency_ms?: number | null;
   parent_call_id?: string | null;

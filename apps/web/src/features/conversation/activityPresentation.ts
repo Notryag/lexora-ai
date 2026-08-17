@@ -119,11 +119,12 @@ function activityPresentation(
 
   if (subagentName) {
     const taskKey = subagentTaskKey(activity, subagentName);
+    const displayName = activity.display_name ?? SUBAGENT_NAMES[subagentName] ?? "专业分析 Agent";
     return {
       key: taskKey,
       kind: "subagent",
-      title: SUBAGENT_NAMES[subagentName] ?? "专业分析 Agent",
-      runningTitle: `正在调用${SUBAGENT_NAMES[subagentName] ?? "专业分析 Agent"}`,
+      title: displayName,
+      runningTitle: `正在调用${displayName}`,
       description: activity.description
         ?? SUBAGENT_DESCRIPTIONS[subagentName]
         ?? "执行主 Agent 委派的专业分析任务",

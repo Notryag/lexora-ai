@@ -578,6 +578,8 @@ export interface components {
             caller?: string | null;
             /** Description */
             description?: string | null;
+            /** Display Name */
+            display_name?: string | null;
             /** Kind */
             kind?: string | null;
             /** Latency Ms */

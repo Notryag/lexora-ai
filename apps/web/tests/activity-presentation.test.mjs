@@ -43,6 +43,26 @@ test("merges delegation transport and subagent lifecycle into one Chinese row", 
   }]);
 });
 
+test("uses plugin-provided subagent display name without frontend registration", () => {
+  const timeline = buildActivityTimeline([
+    activity("task_started", "subagent.start", {
+      subagent_type: "evidence_reviewer",
+      display_name: "证据审查 Agent",
+      task_id: "evidence-task",
+      description: "检查证据材料的关联性",
+    }),
+    activity("task_completed", "subagent.end", {
+      subagent_type: "evidence_reviewer",
+      display_name: "证据审查 Agent",
+      task_id: "evidence-task",
+      status: "completed",
+    }),
+  ], false, false);
+
+  assert.equal(timeline[0].title, "证据审查 Agent");
+  assert.equal(timeline[0].technicalName, "evidence_reviewer");
+});
+
 test("keeps repeated tool calls separate and merges each call with its terminal event", () => {
   const inProgress = [
     activity("tool_started", "tool.started", {

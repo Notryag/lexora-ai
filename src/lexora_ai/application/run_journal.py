@@ -186,6 +186,7 @@ def _safe_payload(
         "call_index",
         "caller",
         "description",
+        "display_name",
         "latency_ms",
         "parent_call_id",
         "tool_name",

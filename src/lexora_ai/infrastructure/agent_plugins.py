@@ -5,6 +5,7 @@ from typing import Any
 
 from north import (
     AgentDefinition,
+    ConversationTitleService,
     FunctionPlugin,
     PluginContext,
     RegistrationHandle,
@@ -35,7 +36,17 @@ def build_lexora_plugins(
         return RegistrationHandle(lambda: [handle.dispose() for handle in reversed(handles)])
 
     def install_title(context: PluginContext) -> RegistrationHandle:
-        return context.register_middleware(TitleMiddleware(model=context.model, max_chars=32))
+        service = ConversationTitleService(provider=context.model, max_chars=32)
+        provider_handle = context.register_provider("conversation_title", context.model)
+        service_handle = context.register_service("conversation_title", service)
+        middleware_handle = context.register_middleware(TitleMiddleware(service=service))
+        return RegistrationHandle(
+            lambda: [
+                middleware_handle.dispose(),
+                service_handle.dispose(),
+                provider_handle.dispose(),
+            ]
+        )
 
     return (
         FunctionPlugin(

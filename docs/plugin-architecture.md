@@ -2,7 +2,7 @@
 
 ## 文档状态
 
-本文记录 Lexora 与 North 的插件化架构及当前迁移状态。North 已完成最小插件运行时、Lexora/Dayboard 组合根和按委派懒创建子 Agent；标题能力当前仍由 Lexora Plugin 安装的 North Middleware 执行，完整异步 Title Service 属于后续切片。
+本文记录 Lexora 与 North 的插件化架构及当前迁移状态。North 已完成最小插件运行时、Lexora/Dayboard 组合根和按委派懒创建子 Agent；Lexora 标题插件已经注册独立的 Title Provider 与 ConversationTitleService，当前仍由 Middleware 在同一 Run 内调用，异步事件投影属于后续切片。
 
 本文参考 DeepSeek Harness 的官方架构，尤其是 Cordis 插件、能力 seam、Session Title Service 和 Subagent Runtime 的设计，但不直接复制其 TypeScript/Cordis 实现。
 
@@ -250,7 +250,7 @@ Definition 和事件监听器均不再生效。
 
 验收标准：两个宿主都能在同一 North 版本上启动，插件列表和作用域可通过测试事件观察到。
 
-### Phase 2：标题能力（下一切片）
+### Phase 2：标题能力（进行中）
 
 North 提供 `TitleServicePlugin`；Lexora 和 Dayboard 各自注册标题 Provider。标题生成从主
 Agent 的模型 middleware 中移出，采用异步服务调用；产品侧保留手动重命名保护、fallback、
@@ -335,7 +335,7 @@ class PluginContext(Protocol):
 SubagentRuntime 在委派时根据 Definition 创建实例。该迁移会同步处理取消、Checkpointer、
 事件归属和结果 Schema，不能通过简单重命名 `SubagentSpec` 完成。
 
-本次切换不保留 `additional_middlewares` 兼容 API。当前标题仍通过 `lexora.title` Plugin 安装 Middleware；下一切片再将其替换为异步 Title Service Definition + Provider，并保持同一插件组合根。
+本次切换不保留 `additional_middlewares` 兼容 API。当前 `lexora.title` Plugin 已注册 Title Provider、ConversationTitleService 和消费该 Service 的 Middleware；下一切片只迁移调用时序和标题事件投影，不再改变插件组合根。
 
 ## 当前不做的事
 

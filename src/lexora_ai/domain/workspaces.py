@@ -294,6 +294,7 @@ class CaseConversationTurnResult(BaseModel):
     case_id: UUID
     thread_id: UUID
     run_id: UUID
+    case_title: str = Field(default="未命名案件", min_length=1, max_length=240)
     assistant_message: str
     material_count: int = Field(ge=0)
     legal_citations: list[LegalCitation] = Field(default_factory=list)

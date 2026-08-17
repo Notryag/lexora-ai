@@ -172,6 +172,23 @@ class ConversationThreadRepository:
         )
         return thread_from_row(row) if row else None
 
+    async def update_title(
+        self,
+        context: UserContext,
+        thread_id: UUID,
+        title: str,
+    ) -> ConversationThread | None:
+        row = await self.session.scalar(
+            update(ConversationThreadRow)
+            .where(
+                ConversationThreadRow.id == thread_id,
+                ConversationThreadRow.owner_id == context.user_id,
+            )
+            .values(title=title, updated_at=func.now())
+            .returning(ConversationThreadRow)
+        )
+        return thread_from_row(row) if row else None
+
     async def get_or_create_primary(self, context: UserContext) -> ConversationThread:
         row = await self.session.scalar(
             select(ConversationThreadRow).where(

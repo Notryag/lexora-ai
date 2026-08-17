@@ -533,6 +533,7 @@ class PersistentLegalConversationService:
                 case_profile=(case_memory.profile if case_memory.updated else None),
                 checkpoint_id=generated.runtime_checkpoint_id,
                 runtime_thread_id=expected_runtime_thread_id,
+                generated_title=generated.runtime_title,
             )
             if not completed:
                 raise RunCancelledError("This analysis was cancelled")
@@ -540,6 +541,7 @@ class PersistentLegalConversationService:
                 case_id=case_id,
                 thread_id=thread.id,
                 run_id=submission.run_id,
+                case_title=completed,
                 assistant_message=content,
                 material_count=len(materials),
                 legal_citations=legal_citations,
@@ -629,7 +631,8 @@ class PersistentLegalConversationService:
         case_profile: CaseProfile | None,
         checkpoint_id: str | None,
         runtime_thread_id: UUID,
-    ) -> bool:
+        generated_title: str | None,
+    ) -> str | None:
         async with self._session_factory() as session:
             unit_of_work = LexoraUnitOfWork(session)
             runs = AgentRunService(unit_of_work)
@@ -639,7 +642,30 @@ class PersistentLegalConversationService:
                 run,
                 result_message=content,
             ):
-                return False
+                return None
+            case = await unit_of_work.cases.get(self._context, case_id)
+            if case is None:
+                raise CaseNotFoundError("Case not found")
+            case_title = case.title
+            if generated_title and case.title == "未命名案件":
+                updated_case = await unit_of_work.cases.update_title_if(
+                    self._context,
+                    case_id,
+                    expected_title="未命名案件",
+                    title=generated_title,
+                )
+                if updated_case is not None:
+                    case_title = updated_case.title
+                    thread = await unit_of_work.threads.get_for_case(
+                        self._context,
+                        case_id,
+                    )
+                    if thread is not None:
+                        await unit_of_work.threads.update_title(
+                            self._context,
+                            thread.id,
+                            updated_case.title,
+                        )
             if case_profile is not None:
                 updated_case = await unit_of_work.cases.update_profile(
                     self._context,
@@ -678,7 +704,7 @@ class PersistentLegalConversationService:
                 ),
             )
             await unit_of_work.commit()
-            return True
+            return case_title
 
     @staticmethod
     def _citation_payload(message: object) -> dict[str, object]:

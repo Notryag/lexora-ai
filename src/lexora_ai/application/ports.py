@@ -30,6 +30,7 @@ class GeneratedConversationTurn:
     content: str
     runtime_thread_id: str
     runtime_checkpoint_id: str | None = None
+    runtime_title: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

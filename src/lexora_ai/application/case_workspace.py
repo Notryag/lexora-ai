@@ -72,6 +72,13 @@ class CaseWorkspaceService:
             result = await unit_of_work.cases.update(self._context, case_id, request)
             if result is None:
                 raise CaseNotFoundError("Case not found")
+            thread = await unit_of_work.threads.get_for_case(self._context, case_id)
+            if thread is not None:
+                await unit_of_work.threads.update_title(
+                    self._context,
+                    thread.id,
+                    result.title,
+                )
             await unit_of_work.commit()
             return result
 

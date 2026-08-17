@@ -103,6 +103,31 @@ class CaseRepository:
         )
         return legal_case_from_row(row, material_count=count or 0)
 
+    async def update_title_if(
+        self,
+        context: UserContext,
+        case_id: UUID,
+        *,
+        expected_title: str,
+        title: str,
+    ) -> LegalCase | None:
+        row = await self.session.scalar(
+            update(LegalCaseRow)
+            .where(
+                LegalCaseRow.id == case_id,
+                LegalCaseRow.owner_id == context.user_id,
+                LegalCaseRow.title == expected_title,
+            )
+            .values(title=title, updated_at=func.now())
+            .returning(LegalCaseRow)
+        )
+        if row is None:
+            return None
+        count = await self.session.scalar(
+            select(func.count(CaseMaterialRow.id)).where(CaseMaterialRow.case_id == case_id)
+        )
+        return legal_case_from_row(row, material_count=count or 0)
+
     async def update_profile(
         self,
         context: UserContext,

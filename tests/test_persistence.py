@@ -172,11 +172,12 @@ class RecordingGateway:
 
 
 class CheckpointRecordingGateway:
-    def __init__(self) -> None:
+    def __init__(self, *, runtime_title: str | None = None) -> None:
         self.thread_ids = []
         self.run_ids = []
         self.checkpoint_ids = []
         self.histories = []
+        self.runtime_title = runtime_title
 
     async def converse(
         self,
@@ -198,6 +199,7 @@ class CheckpointRecordingGateway:
             content="已记录，请继续。",
             runtime_thread_id=str(thread_id),
             runtime_checkpoint_id=next_checkpoint_id,
+            runtime_title=self.runtime_title,
         )
 
 
@@ -367,6 +369,34 @@ async def test_successful_checkpoint_advances_thread_without_replaying_history(
             context,
             first.thread_id,
         ) == (first.run_id, "checkpoint-2")
+
+
+@pytest.mark.asyncio
+async def test_runtime_title_is_projected_to_case_and_thread_once(session_factory) -> None:
+    context = UserContext(
+        user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        timezone="Asia/Shanghai",
+        locale="zh-CN",
+    )
+    workspace = CaseWorkspaceService(session_factory, context, parse_material_file)
+    gateway = CheckpointRecordingGateway(runtime_title="离婚房产分割")
+    conversation = PersistentLegalConversationService(session_factory, context, gateway)
+    case = await workspace.create_case(LegalCaseCreate(title="未命名案件"))
+
+    result = await conversation.execute(
+        case.id,
+        CaseConversationTurnRequest(message="我们要离婚，房子怎么分？"),
+    )
+
+    assert result.case_title == "离婚房产分割"
+    async with session_factory() as session:
+        unit_of_work = LexoraUnitOfWork(session)
+        stored_case = await unit_of_work.cases.get(context, case.id)
+        thread = await unit_of_work.threads.get_for_case(context, case.id)
+        assert stored_case is not None
+        assert thread is not None
+        assert stored_case.title == "离婚房产分割"
+        assert thread.title == "离婚房产分割"
 
 
 @pytest.mark.asyncio

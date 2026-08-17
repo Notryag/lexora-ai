@@ -401,6 +401,8 @@ export interface components {
              * Format: uuid
              */
             run_id: string;
+            /** Case Title */
+            case_title: string;
             /** Assistant Message */
             assistant_message: string;
             /** Material Count */

@@ -40,6 +40,18 @@ Lexora converts product materials into those contracts, persists deterministic c
 owns its query normalization and legal authority matching, and projects retrieved results back to
 references such as `[M1:C1]`, `[L...:C...]`, and `[C...:S...]`.
 
+### Thread Title Generation
+
+首轮案件对话的自动命名使用 North 的通用 `TitleMiddleware`，而不是在 Lexora 应用服务中另起一
+次模型请求。Middleware 在同一个 Agent Run 的 `after_model` / `aafter_model` 阶段判断是否为
+首次完整交互，并把 LLM 生成的短标题写入 `ThreadState.title`；模型调用失败时由 North 使用
+首条用户消息的有界文本作为 fallback。标题不会创建额外 Run、消息或子 Agent，也不显示为法律
+分析步骤。
+
+Lexora 在 Run 成功提交时读取 runtime title，并在“案件仍为未命名”这一条件下原子更新
+`legal_cases.title` 与 `conversation_threads.title`。用户手动编辑后的案件标题不会被覆盖。
+North 不知道案件或法律领域，产品层只负责把通用 thread state 投影到自己的元数据模型。
+
 ## Agent Platform Boundary
 
 Lexora now reuses Agent Platform's product-neutral Conversation, message, Run transition, event,

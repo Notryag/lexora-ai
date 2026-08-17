@@ -114,6 +114,14 @@ export function LexoraWorkspace() {
       );
     },
     onSuccess: (result) => {
+      if (result.case_title) {
+        setCaseTitle((current) => current && current !== "未命名案件" ? current : result.case_title);
+        queryClient.setQueryData(["cases"], (current: typeof casesQuery.data) =>
+          (current ?? []).map((item) => item.id === result.case_id
+            ? { ...item, title: result.case_title }
+            : item),
+        );
+      }
       setPendingAssistantMessage((current) => ({
         id: current?.id ?? crypto.randomUUID(),
         runId: result.run_id,

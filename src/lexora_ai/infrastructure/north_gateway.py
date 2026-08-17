@@ -266,6 +266,7 @@ class NorthCaseAnalysisGateway:
             content=content,
             runtime_thread_id=resolved_thread_id,
             runtime_checkpoint_id=await self._latest_checkpoint_id(resolved_thread_id),
+            runtime_title=_runtime_title(result.values),
         )
 
     async def _latest_checkpoint_id(
@@ -310,6 +311,9 @@ class NorthCaseAnalysisGateway:
             model_name=self._settings.app_model_name,
             model_options=model_options,
             system_prompt=LEXORA_SYSTEM_PROMPT,
+            auto_title_enabled=True,
+            title_model_name=self._settings.app_model_name,
+            title_max_chars=32,
         )
         self._client = AppClient(config)
         return self._client
@@ -336,6 +340,13 @@ def _final_assistant_text(values: Any) -> str:
             if text:
                 return text
     return ""
+
+
+def _runtime_title(values: Any) -> str | None:
+    if not isinstance(values, dict):
+        return None
+    title = values.get("title")
+    return title.strip() if isinstance(title, str) and title.strip() else None
 
 
 def _message_text(content: Any) -> str:

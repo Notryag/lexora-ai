@@ -21,6 +21,10 @@ These instructions apply to coding agents working on Lexora.
 
 ## Extraction Guardrails
 
+- 抽象必须消除真实复杂度。默认让一个 Plugin 完整拥有一项能力及其 Middleware、Tool 或
+  Agent Definition；只有出现多个独立消费者、多个真实 Provider 或跨运行时生命周期时，才抽取
+  Service seam。不要为了对称性预先注册不会被 Registry 解析的 Service/Provider。
+
 - Keep the vendored `packages/rag-core` package framework-neutral and independently testable.
 - Do not copy its retrieval primitives into `lexora_ai` or add legal/product vocabulary to the core.
 - Add a retrieval port only with the first real knowledge-retrieval use case.

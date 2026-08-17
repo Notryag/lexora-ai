@@ -47,7 +47,7 @@ references such as `[M1:C1]`, `[L...:C...]`, and `[C...:S...]`.
 
 ### Thread Title Generation (Current Implementation)
 
-首轮案件对话的自动命名使用 North 的通用 `TitleMiddleware`，而不是在 Lexora 应用服务中另起一
+首轮案件对话的自动命名使用由 Lexora Plugin 注册的 North 通用 `TitleMiddleware`，而不是在 Lexora 应用服务中另起一
 次模型请求。Middleware 在同一个 Agent Run 的 `after_model` / `aafter_model` 阶段判断是否为
 首次完整交互，并把 LLM 生成的短标题写入 `ThreadState.title`；模型调用失败时由 North 使用
 首条用户消息的有界文本作为 fallback。标题不会创建额外 Run、消息或子 Agent，也不显示为法律

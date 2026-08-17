@@ -696,7 +696,7 @@ requires-dist = [
     { name = "docx2txt", specifier = ">=0.9,<1.0" },
     { name = "fastapi", specifier = ">=0.116.0,<1.0.0" },
     { name = "langchain-openai", specifier = ">=1.4.0,<2.0.0" },
-    { name = "north", extras = ["postgres"], git = "https://github.com/Notryag/north-agent.git?subdirectory=packages%2Fharness&rev=e8927f3" },
+    { name = "north", extras = ["postgres"], git = "https://github.com/Notryag/north-agent.git?subdirectory=packages%2Fharness&rev=a7bf64e" },
     { name = "pgvector", specifier = ">=0.3.0,<1.0.0" },
     { name = "pydantic-settings", specifier = ">=2.10.0,<3.0.0" },
     { name = "pypdf", specifier = ">=5.8.0,<7.0.0" },
@@ -805,7 +805,7 @@ wheels = [
 [[package]]
 name = "north"
 version = "0.1.0"
-source = { git = "https://github.com/Notryag/north-agent.git?subdirectory=packages%2Fharness&rev=e8927f3#e8927f3bb434097a6e1556a73459cecff689a56c" }
+source = { git = "https://github.com/Notryag/north-agent.git?subdirectory=packages%2Fharness&rev=a7bf64e#a7bf64e0856de6915184211226a375a34e4bfbff" }
 dependencies = [
     { name = "langchain" },
     { name = "langchain-openai" },
